@@ -6,7 +6,7 @@ import UIKit
 /// installed and a made-up app as not installed. If none pass, everything here returns nil and the app falls
 /// back to what the server remembers (and the "Not on my phone anymore" buttons).
 enum DeviceApps {
-    private typealias Check = (String) -> Bool?
+    typealias Check = (String) -> Bool?
 
     private static let workspace: NSObject? = {
         guard let cls = NSClassFromString("LSApplicationWorkspace") as? NSObject.Type else { return nil }
