@@ -29,6 +29,7 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Mango Signer
+        MangoServerURL: https://mango-signer-production.up.railway.app
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}

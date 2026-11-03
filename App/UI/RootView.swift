@@ -210,6 +210,10 @@ struct LoginScreen: View {
             .padding(24)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .task {
+            // Signed out while using the app (the session ran out): sign straight back in if the login is saved.
+            if server.baseURL != nil && server.savedLogin != nil && !server.checking { await server.checkSession() }
+        }
     }
 
     @ViewBuilder

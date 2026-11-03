@@ -769,7 +769,12 @@ func ago(_ s: String?) -> String {
 
 @MainActor
 final class Server: ObservableObject {
-    @Published var baseURL: URL? = UserDefaults.standard.url(forKey: "serverURL")
+    /// Your server. Built into the app (MangoServerURL in project.yml) so a fresh install connects right away;
+    /// "Use a different server" can still change it.
+    @Published var baseURL: URL? = UserDefaults.standard.url(forKey: "serverURL") ?? Server.builtInServer
+    static var builtInServer: URL? {
+        (Bundle.main.object(forInfoDictionaryKey: "MangoServerURL") as? String).flatMap { $0.isEmpty ? nil : normalize($0) }
+    }
     @Published var state: ServerState?
     @Published var authed = false
     @Published var checking = true
@@ -859,24 +864,39 @@ final class Server: ObservableObject {
         if let s: SessionInfo = try? await get("/api/session"), s.authed {
             authed = true
             await refresh()
+        } else if let saved = savedLogin, (try? await login(username: saved.0, password: saved.1)) != nil {
+            // Signed out (new install, or the session ran out): sign back in with the saved login.
         } else {
             authed = false
         }
     }
 
+    // The login is kept in the iPhone's Keychain so updates and reinstalls sign straight back in.
+    private var loginKey: String { "login:" + (baseURL?.host ?? "") }
+    var savedLogin: (String, String)? {
+        guard let raw = Keychain.get(loginKey), let i = raw.firstIndex(of: "\n") else { return nil }
+        return (String(raw[..<i]), String(raw[raw.index(after: i)...]))
+    }
+    private func saveLogin(_ username: String, _ password: String) { _ = Keychain.set("\(username)\n\(password)", for: loginKey) }
+    /// After changing your password in the app, so the next automatic sign-in uses the new one.
+    func rememberNewPassword(_ password: String) { if let u = savedLogin?.0 { saveLogin(u, password) } }
+
     func login(username: String, password: String) async throws {
         try await post("/api/login", ["username": username, "password": password])
+        saveLogin(username, password)
         authed = true
         await refresh()
     }
 
     func signup(username: String, password: String, invite: String) async throws {
         try await post("/api/signup", ["username": username, "password": password, "invite": invite])
+        saveLogin(username, password)
         authed = true
         await refresh()
     }
 
     func logout() async {
+        Keychain.delete(loginKey)
         _ = try? await post("/api/logout")
         if let cookies = HTTPCookieStorage.shared.cookies { cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) } }
         state = nil

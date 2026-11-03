@@ -440,7 +440,7 @@ struct ChangePasswordSheet: View {
             Field(label: "New password") { SecureField("6+ characters", text: $new).inputStyle() }
             WebButton(title: "Save", kind: .primary, big: true) {
                 Task {
-                    do { try await server.post("/api/account", ["currentPassword": old, "newPassword": new], method: "PATCH"); router.close(); router.say("Password changed") } catch { router.say(error.localizedDescription) }
+                    do { try await server.post("/api/account", ["currentPassword": old, "newPassword": new], method: "PATCH"); server.rememberNewPassword(new); router.close(); router.say("Password changed") } catch { router.say(error.localizedDescription) }
                 }
             }
         }
