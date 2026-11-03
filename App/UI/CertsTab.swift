@@ -19,7 +19,7 @@ struct CertsTab: View {
             }
             SectionTitle(text: "On this iPhone")
             ListBox {
-                LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.certs.count)") { router.open(.localCerts) }
+                LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.ownCerts.count)") { router.open(.localCerts) }
                 RowLine()
                 LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             }

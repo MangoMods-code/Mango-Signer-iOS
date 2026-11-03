@@ -44,6 +44,11 @@ struct RootView: View {
             }
         }
         .task { await server.checkSession() }
+        // Keeps this iPhone's copies of your account's certificates in step (added, renamed, deleted, or another account).
+        .task(id: (server.authed ? server.state?.account.id ?? "" : "") + ":" + (server.state?.certs ?? []).map { $0.id + $0.label }.joined(separator: ",")) {
+            guard server.state != nil || !server.authed else { return }
+            await local.syncAccountCerts(server: server)
+        }
         .onChange(of: phase) { p in
             if p == .active && server.authed {
                 Task {

@@ -315,7 +315,7 @@ struct UserSheet: View {
 struct SigninRow: View {
     let e: SSignin
     var body: some View {
-        let labels = ["login": "Signed in", "login-udid": "Signed in with iPhone", "signout-all": "Signed out other devices", "signup": "Joined", "locked": "Locked"]
+        let labels = ["login": "Signed in", "login-udid": "Signed in with iPhone", "signout-all": "Signed out other devices", "signup": "Joined", "locked": "Locked", "cert-download": "Certificate sent to the iPhone app"]
         HStack(alignment: .top, spacing: 12) {
             Text(e.ok ? (e.type == "signout-all" ? "🚪" : "✅") : "⛔").font(.title3)
             VStack(alignment: .leading, spacing: 2) {

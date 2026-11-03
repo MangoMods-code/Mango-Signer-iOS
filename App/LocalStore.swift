@@ -27,6 +27,8 @@ struct SigningCert: Identifiable, Codable, Hashable {
     var deviceCount: Int
     var allDevices: Bool
     var addedAt = Date()
+    /// Set for a copy of a certificate on your account (kept in step with the server, never added by hand).
+    var serverId: String? = nil
     var p12URL: URL { Paths.certs.appendingPathComponent(p12File) }
     var provURL: URL { Paths.certs.appendingPathComponent(provFile) }
     var password: String { Keychain.get(id.uuidString) ?? "" }
@@ -70,7 +72,11 @@ final class LocalStore: ObservableObject {
         signed.removeAll { !FileManager.default.fileExists(atPath: $0.url.path) }
     }
 
-    var defaultCert: SigningCert? { certs.first { $0.id == defaultCertId } ?? certs.first }
+    var defaultCert: SigningCert? { ownCerts.first { $0.id == defaultCertId } ?? ownCerts.first }
+    /// Certificates added to this iPhone by hand (not the copies of your account's certificates).
+    var ownCerts: [SigningCert] { certs.filter { $0.serverId == nil } }
+    /// The phone's copy of one of your account's certificates.
+    func accountCopy(_ serverId: String?) -> SigningCert? { serverId.flatMap { id in certs.first { $0.serverId == id } } }
 
     // MARK: saving
 
@@ -123,7 +129,7 @@ final class LocalStore: ObservableObject {
 
     // MARK: certificates
 
-    func addCert(p12: URL, provision: URL, password: String, label: String) throws -> SigningCert {
+    func addCert(p12: URL, provision: URL, password: String, label: String, serverId: String? = nil) throws -> SigningCert {
         let id = UUID()
         let p12Dest = Paths.certs.appendingPathComponent("\(id.uuidString).p12")
         let provDest = Paths.certs.appendingPathComponent("\(id.uuidString).mobileprovision")
@@ -139,9 +145,10 @@ final class LocalStore: ObservableObject {
                 deviceCount: provInfo.devices.count, allDevices: provInfo.allDevices
             )
             cert.id = id
+            cert.serverId = serverId
             if !Keychain.set(password, for: id.uuidString) { throw MangoError("Couldn't save the certificate password on this iPhone.") }
             certs.append(cert)
-            if defaultCertId == nil { defaultCertId = id }
+            if defaultCertId == nil && serverId == nil { defaultCertId = id }
             persist()
             return cert
         } catch {
@@ -156,9 +163,39 @@ final class LocalStore: ObservableObject {
         try? FileManager.default.removeItem(at: cert.provURL)
         Keychain.delete(cert.id.uuidString)
         certs.removeAll { $0.id == cert.id }
-        if defaultCertId == cert.id { defaultCertId = certs.first?.id }
+        if defaultCertId == cert.id { defaultCertId = ownCerts.first?.id }
         persist()
     }
+
+    /// Keeps a copy of each certificate on your account here, so signing on this iPhone can use them and they
+    /// come back after reinstalling the app. Only missing ones are downloaded; copies of certificates that are
+    /// gone from your account (or belong to another account) are removed.
+    func syncAccountCerts(server: Server) async {
+        guard !syncingCerts else { return }
+        syncingCerts = true
+        defer { syncingCerts = false }
+        let wanted = server.authed ? server.certs : []
+        for c in certs where c.serverId != nil && !wanted.contains(where: { $0.id == c.serverId }) { delete(c) }
+        struct CertBundle: Decodable { var label: String; var p12: String; var profile: String; var password: String }
+        for sc in wanted {
+            if var have = accountCopy(sc.id), FileManager.default.fileExists(atPath: have.p12URL.path) {
+                if have.label != "☁ \(sc.label)", let i = certs.firstIndex(where: { $0.id == have.id }) {
+                    have.label = "☁ \(sc.label)"; certs[i] = have; persist()
+                }
+                continue
+            }
+            if let old = accountCopy(sc.id) { delete(old) }
+            guard let b: CertBundle = try? await server.get("/api/certs/\(sc.id)/bundle"),
+                  let p12 = Data(base64Encoded: b.p12), let prof = Data(base64Encoded: b.profile) else { continue }
+            let tmp = Paths.work.appendingPathComponent("acct-\(UUID().uuidString.prefix(8))", isDirectory: true)
+            try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            let p12URL = tmp.appendingPathComponent("cert.p12"), provURL = tmp.appendingPathComponent("profile.mobileprovision")
+            guard (try? p12.write(to: p12URL)) != nil, (try? prof.write(to: provURL)) != nil else { continue }
+            _ = try? addCert(p12: p12URL, provision: provURL, password: b.password, label: "☁ \(b.label)", serverId: sc.id)
+        }
+    }
+    private var syncingCerts = false
 
     // MARK: signing
 

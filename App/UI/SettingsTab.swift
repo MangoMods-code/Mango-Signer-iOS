@@ -297,7 +297,7 @@ struct SettingsTab: View {
             RowLine()
             LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             RowLine()
-            LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.certs.count)") { router.open(.localCerts) }
+            LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.ownCerts.count)") { router.open(.localCerts) }
             RowLine()
             ValueRow(title: "App version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
             RowLine()

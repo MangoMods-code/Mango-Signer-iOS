@@ -100,7 +100,7 @@ struct LocalSignSheet: View {
 
     enum Phase: Equatable { case ready, signing, done, failed(String) }
 
-    var cert: SigningCert? { local.certs.first { $0.id == certId } ?? local.defaultCert }
+    var cert: SigningCert? { local.certs.first { $0.id == certId } ?? local.defaultCert ?? local.certs.first }
 
     var body: some View {
         NavigationStack {
@@ -201,12 +201,14 @@ struct LocalCertsScreen: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if local.certs.isEmpty {
-                    EmptyState(icon: "shield.lefthalf.filled", title: "No certificates on this iPhone",
+                Text("Certificates on your account (the Certificates tab) already work for signing on this iPhone, and they come back by themselves if you reinstall the app. Add one here only if you want it on this iPhone and not on your account.")
+                    .font(.caption).foregroundStyle(Theme.muted).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
+                if local.ownCerts.isEmpty {
+                    EmptyState(icon: "shield.lefthalf.filled", title: "No certificates only on this iPhone",
                                message: "Add a .p12 and .mobileprovision to sign apps right on this iPhone. They never leave it.")
                 } else {
                     Card {
-                        ForEach(Array(local.certs.enumerated()), id: \.element.id) { i, c in
+                        ForEach(Array(local.ownCerts.enumerated()), id: \.element.id) { i, c in
                             if i > 0 { Divider().overlay(Theme.line) }
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 4) {

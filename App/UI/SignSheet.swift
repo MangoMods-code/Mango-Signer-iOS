@@ -92,7 +92,7 @@ struct SignSheet: View {
     func load(_ a: SApp) {
         let d = defaults
         certId = server.defaultCert?.id ?? ""
-        localCertId = local.defaultCert?.id
+        localCertId = local.accountCopy(server.defaultCert?.id)?.id ?? local.defaultCert?.id ?? local.certs.first?.id
         if certs.isEmpty && !local.certs.isEmpty { place = .phone }
         versionIndex = (a.versions ?? []).contains { ($0.vi ?? -1) == d.versionIndex } ? d.versionIndex : 0
         minOS = d.minOS
@@ -128,7 +128,7 @@ struct SignSheet: View {
                 SelectBox(selection: $certId, options: certs.map { ($0.id, "\($0.label) · \($0.type)") })
             }
         } else {
-            Field(label: "Certificate on this iPhone", hint: "The app downloads to this iPhone and is signed here.") {
+            Field(label: "Certificate", hint: "The app downloads to this iPhone and is signed here. ☁ certificates are the ones on your account.") {
                 SelectBox(selection: Binding(get: { localCertId ?? UUID() }, set: { localCertId = $0 }),
                           options: local.certs.map { ($0.id, "\($0.label)\($0.daysLeft.map { $0 < 0 ? " · expired" : " · \($0)d left" } ?? "")") })
             }
