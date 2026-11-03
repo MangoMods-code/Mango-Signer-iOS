@@ -432,7 +432,10 @@ struct SigningSheet: View {
                     Text(sub).font(.footnote).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
                     if let progress { ProgressView(value: progress).tint(Theme.mango).padding(.horizontal, 8) }
                     logBox
-                    WebButton(title: run.local == nil ? "Cancel signing" : "Cancel") { cancel() }.padding(.top, 8)
+                    if run.local == nil && jobId != nil {
+                        WebButton(title: "Keep going in the background") { goBackground() }.padding(.top, 8)
+                    }
+                    WebButton(title: run.local == nil ? "Cancel signing" : "Cancel") { cancel() }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -467,6 +470,14 @@ struct SigningSheet: View {
                 .onChange(of: log.count) { _ in proxy.scrollTo("end") }
             }
         }
+    }
+
+    /// Signing runs on the server anyway: close this screen and get an alert when it's ready.
+    func goBackground() {
+        guard let jobId else { return }
+        Task { _ = try? await server.post("/api/jobs/\(jobId)/notify") }
+        router.close()
+        router.say("Signing \(run.app.name) in the background — you'll get an alert when it's ready")
     }
 
     func cancel() {

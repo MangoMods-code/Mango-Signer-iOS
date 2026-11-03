@@ -441,10 +441,11 @@ struct SAlert: Decodable, Identifiable {
     var requestId: String?
     var userId: String?
     var bugId: String?
+    var signedId: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         id = c.str("id") ?? UUID().uuidString; kind = c.str("kind"); title = c.str("title"); body = c.str("body")
-        at = c.str("at"); read = c.bool("read"); appId = c.str("appId"); requestId = c.str("requestId"); userId = c.str("userId"); bugId = c.str("bugId")
+        at = c.str("at"); read = c.bool("read"); appId = c.str("appId"); requestId = c.str("requestId"); userId = c.str("userId"); bugId = c.str("bugId"); signedId = c.str("signedId")
     }
 }
 

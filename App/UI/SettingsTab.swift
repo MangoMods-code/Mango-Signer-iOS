@@ -306,7 +306,7 @@ struct SettingsTab: View {
 struct AlertsSheet: View {
     @EnvironmentObject var server: Server
     @EnvironmentObject var router: Router
-    let icons = ["bug": "🐞", "broadcast": "📣", "update": "⬆️", "request": "🙋", "cert": "🔐", "security": "🔒", "user": "👋", "storage": "💾"]
+    let icons = ["signed": "✅", "bug": "🐞", "broadcast": "📣", "update": "⬆️", "request": "🙋", "cert": "🔐", "security": "🔒", "user": "👋", "storage": "💾"]
 
     var body: some View {
         let list = server.state?.alerts ?? []
@@ -364,6 +364,9 @@ struct AlertsSheet: View {
         case "cert": router.go(.certs)
         case "user": if let uid = a.userId, (server.state?.users ?? []).contains(where: { $0.id == uid }) { router.open(.user(uid)) }
         case "security": if server.isStaff { router.open(.securityLog) }
+        case "signed":
+            if let id = a.signedId, (server.state?.signed ?? []).contains(where: { $0.id == id }) { router.open(.signed(id)) }
+            else if let id = a.appId, server.app(id) != nil { router.open(.app(id)) }
         case "bug": if let id = a.bugId, (server.state?.bugs ?? []).contains(where: { $0.id == id }) { router.open(.bug(id)) }
         case "storage": router.go(.settings)
         default: break
