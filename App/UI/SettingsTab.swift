@@ -243,6 +243,8 @@ struct SettingsTab: View {
                           if v { Task { await local.saveMissingCopies(server: server) } }
                       }))
             RowLine()
+            LinkRow(title: "📲 What iOS shows", value: "\(DeviceApps.userApps.count) of your apps") { router.open(.deviceApps) }
+            RowLine()
             ValueRow(title: "What's installed", value: DeviceApps.statusText,
                      sub: DeviceApps.seesOtherApps ? "" : "Mango goes by what you installed through it. Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed).")
             RowLine()
@@ -509,6 +511,62 @@ struct SecurityLogSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+
+/// Shows exactly what iOS tells Mango about the apps on this iPhone (to see why something isn't detected).
+struct DeviceAppsSheet: View {
+    @EnvironmentObject var server: Server
+    @State private var all: [DeviceApps.Seen] = []
+    @State private var loaded = false
+
+    var body: some View {
+        SheetScroll {
+            SheetTitle(text: "📲 What iOS shows")
+            KVList(items: [
+                ("How Mango asks", DeviceApps.method?.name ?? "No way works"),
+                ("Sees Apple's apps", DeviceApps.seesOtherApps ? "Yes" : "No"),
+                ("Apps iOS lists", loaded ? "\(all.count)" : "…"),
+                ("Your own apps in it", loaded ? "\(all.filter { $0.user }.count)" : "…"),
+            ])
+            SectionTitle(text: "Your signed apps")
+            ListBox(fill: Theme.bg2) {
+                let list = server.state?.signed ?? []
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, s in
+                    if i > 0 { RowLine() }
+                    let st = PhoneStatus.of(bundleId: s.bundleId, name: s.name)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(s.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                        Text(s.bundleId ?? "—").font(.caption.monospaced()).foregroundStyle(Theme.muted).textSelection(.enabled)
+                        Text(st.installed == true ? "Installed\(st.bundleId != s.bundleId ? " as \(st.bundleId ?? "")" : "")\(st.version.map { " · v\($0)" } ?? "")" : st.installed == false ? "iOS says not installed" : "iOS won't say")
+                            .font(.caption).foregroundStyle(st.installed == true ? Theme.leaf : Theme.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 10)
+                }
+            }
+            SectionTitle(text: "Your apps iOS lists", count: all.filter { $0.user }.count)
+            let mine = all.filter { $0.user }
+            if mine.isEmpty {
+                Hint(text: loaded ? "iOS doesn't list any of the apps you installed — it only shows Apple's own apps to other apps. Mango then goes by what you installed through it." : "Looking…")
+            } else {
+                ListBox(fill: Theme.bg2) {
+                    ForEach(Array(mine.enumerated()), id: \.element.id) { i, a in
+                        if i > 0 { RowLine() }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(a.name)\(a.version.isEmpty ? "" : " · v\(a.version)")").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                            Text(a.id).font(.caption.monospaced()).foregroundStyle(Theme.muted).textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 10)
+                    }
+                }
+            }
+        }
+        .task {
+            all = DeviceApps.everything().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            DeviceApps.rescan()
+            loaded = true
         }
     }
 }

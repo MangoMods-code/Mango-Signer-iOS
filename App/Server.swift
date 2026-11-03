@@ -912,9 +912,11 @@ final class Server: ObservableObject {
         guard DeviceApps.available, let st = state else { return }
         guard force || Date().timeIntervalSince(lastDeviceSync) > 20 else { return }
         lastDeviceSync = Date()
+        DeviceApps.rescan()
         var changed = false
         for a in st.apps where a.installed != nil {
             let ids = bundleIds(for: a)
+            if DeviceApps.installedByName(a.name) != nil { continue } // there under another app ID
             guard !ids.isEmpty else { continue }
             let here = ids.filter { DeviceApps.isInstalled($0) == true }
             if here.isEmpty {

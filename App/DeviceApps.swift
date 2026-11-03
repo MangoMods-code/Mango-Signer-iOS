@@ -63,13 +63,48 @@ enum DeviceApps {
     /// apps), nil = can't tell (then the app goes by what the server recorded when you installed through Mango).
     static func isInstalled(_ bundleId: String?) -> Bool? {
         guard let m = method, let id = bundleId, !id.isEmpty else { return nil }
-        if m.check(id) == true { return true }
+        if m.check(id) == true || userApps.contains(where: { $0.id == id }) { return true }
         return seesOtherApps ? false : nil
     }
 
     static var statusText: String {
         guard let m = method else { return "iOS won't say" }
         return seesOtherApps ? "Checked on this iPhone (\(m.name))" : "iOS only shows Mango itself"
+    }
+
+    struct Seen: Identifiable, Hashable {
+        var id: String          // bundle ID
+        var name: String
+        var version: String
+        var user: Bool          // installed by you (not one of Apple's)
+    }
+
+    /// Every app iOS lists for Mango (when it lists them at all). Newer iOS may hide the apps you installed.
+    static func everything() -> [Seen] {
+        let sels = ["allInstalledApplications", "allApplications"]
+        guard let ws = workspace else { return [] }
+        for name in sels {
+            let sel = NSSelectorFromString(name)
+            guard ws.responds(to: sel), let list = ws.perform(sel)?.takeUnretainedValue() as? [NSObject], !list.isEmpty else { continue }
+            return list.compactMap { p in
+                func str(_ k: String) -> String? { p.responds(to: NSSelectorFromString(k)) ? p.value(forKey: k) as? String : nil }
+                guard let id = str("bundleIdentifier") ?? str("applicationIdentifier") else { return nil }
+                let type = str("applicationType") ?? ""
+                return Seen(id: id, name: str("localizedName") ?? str("itemName") ?? id, version: str("shortVersionString") ?? str("bundleVersion") ?? "",
+                            user: type == "User" || (!id.hasPrefix("com.apple.") && type != "System"))
+            }
+        }
+        return []
+    }
+
+    /// Your own apps iOS lists, refreshed whenever the app checks (cheap enough to redo each time).
+    static var userApps: [Seen] = []
+    static func rescan() { userApps = everything().filter { $0.user && !isSelf($0.id) } }
+
+    /// Is an app with this name on the phone (for apps installed under a different app ID)?
+    static func installedByName(_ name: String?) -> Seen? {
+        guard let n = name?.trimmingCharacters(in: .whitespaces).lowercased(), !n.isEmpty else { return nil }
+        return userApps.first { $0.name.lowercased() == n }
     }
 
     /// The installed copy's version ("1.2.3"), if iOS says.

@@ -6,9 +6,14 @@ struct PhoneStatus {
     var version: String?
     var bundleId: String?
 
-    static func of(bundleId: String?) -> PhoneStatus {
+    static func of(bundleId: String?, name: String? = nil) -> PhoneStatus {
         let here = DeviceApps.isInstalled(bundleId)
-        return PhoneStatus(installed: here, version: here == true ? DeviceApps.version(bundleId) : nil, bundleId: bundleId)
+        if here != true, let seen = DeviceApps.installedByName(name) {
+            // Same app installed under a different app ID (from another signer, or signed with a changed ID).
+            return PhoneStatus(installed: true, version: seen.version.isEmpty ? nil : seen.version, bundleId: seen.id)
+        }
+        let v = here == true ? (DeviceApps.version(bundleId) ?? DeviceApps.userApps.first { $0.id == bundleId }.map { $0.version }) : nil
+        return PhoneStatus(installed: here, version: v?.isEmpty == true ? nil : v, bundleId: bundleId)
     }
     /// Installed and it's this exact signed copy (same version), so "Open" makes more sense than "Get".
     func isSame(as version: String?) -> Bool {
@@ -69,7 +74,7 @@ struct SignedTab: View {
     @ViewBuilder
     var phoneCard: some View {
         if DeviceApps.seesOtherApps {
-            let here = signed.filter { DeviceApps.isInstalled($0.bundleId) == true }
+            let here = signed.filter { PhoneStatus.of(bundleId: $0.bundleId, name: $0.name).installed == true }
             let saving = local.saving.count
             HStack(spacing: 12) {
                 Image(systemName: "iphone").font(.title2).foregroundStyle(Theme.mango)
@@ -151,7 +156,7 @@ struct SignedRow: View {
     @State private var busy = false
 
     var body: some View {
-        let phone = PhoneStatus.of(bundleId: s.bundleId)
+        let phone = PhoneStatus.of(bundleId: s.bundleId, name: s.name)
         let copy = local.copy(of: s.id)
         let saving = local.saving[s.id]
         HStack(spacing: 12) {
@@ -165,7 +170,7 @@ struct SignedRow: View {
             Spacer(minLength: 4)
             if busy {
                 ProgressView().tint(Theme.mango).frame(width: 60)
-            } else if phone.isSame(as: s.version), let id = s.bundleId, !DeviceApps.isSelf(id) {
+            } else if phone.isSame(as: s.version), let id = phone.bundleId, !DeviceApps.isSelf(id) {
                 PillButton(title: "Open") { openApp(id, ipa: copy?.url) }
             } else if s.fileAvailable == true {
                 PillButton(title: "Get") { router.startInstall(s, server: server) }
@@ -239,7 +244,7 @@ struct LocalSignedRow: View {
     let copy: SignedApp
     var body: some View {
         let _ = 0
-        let phone = PhoneStatus.of(bundleId: copy.bundleId)
+        let phone = PhoneStatus.of(bundleId: copy.bundleId, name: copy.name)
         HStack(spacing: 12) {
             LocalIcon(id: copy.id, name: copy.name, size: 54)
             VStack(alignment: .leading, spacing: 1) {
@@ -281,7 +286,7 @@ struct SignedSheet: View {
     var body: some View {
         SheetScroll {
             if let s = router.signed(signedId, server) {
-                let phone = PhoneStatus.of(bundleId: s.bundleId)
+                let phone = PhoneStatus.of(bundleId: s.bundleId, name: s.name)
                 let copy = local.copy(of: s.id)
                 SheetHead(title: s.name, sub: s.bundleId ?? "") { WebIcon(url: server.iconURL(s), name: s.name, size: 76) }
                 if s.fileAvailable != true {
@@ -291,7 +296,7 @@ struct SignedSheet: View {
                 }
                 KVList(items: kv(s, phone: phone, copy: copy))
                 VStack(spacing: 10) {
-                    if phone.isSame(as: s.version), let id = s.bundleId, !DeviceApps.isSelf(id) {
+                    if phone.isSame(as: s.version), let id = phone.bundleId, !DeviceApps.isSelf(id) {
                         WebButton(title: "Open", kind: .primary, big: true) {
                             Task { if !(await DeviceApps.open(id, ipa: copy?.url)) { router.say("iOS won't let Mango open this one — open it from your Home Screen") } }
                         }

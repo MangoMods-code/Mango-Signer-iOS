@@ -50,6 +50,7 @@ enum Route: Identifiable, Equatable {
     case localApps
     case localCerts
     case addLocalCert
+    case deviceApps
 
     var id: String {
         switch self {
@@ -78,6 +79,7 @@ enum Route: Identifiable, Equatable {
         case .localApps: return "localApps"
         case .localCerts: return "localCerts"
         case .addLocalCert: return "addLocalCert"
+        case .deviceApps: return "deviceApps"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -179,6 +181,7 @@ struct SheetHost: View {
             case .localApps: NavigationStack { LocalAppsScreen() }
             case .localCerts: NavigationStack { LocalCertsScreen() }
             case .addLocalCert: AddCertSheet(target: .phone)
+            case .deviceApps: DeviceAppsSheet()
             case nil: Theme.card.ignoresSafeArea()
             }
         }
