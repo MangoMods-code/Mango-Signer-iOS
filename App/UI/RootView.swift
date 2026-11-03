@@ -73,10 +73,10 @@ struct MainShell: View {
     @EnvironmentObject var local: LocalStore
     @EnvironmentObject var router: Router
 
-    var owner: Bool { server.isOwner }
+    var owner: Bool { server.isStaff }
     var updates: Int { (server.state?.apps ?? []).filter { $0.hasUpdate }.count }
     var certWarn: Bool { server.certs.contains { $0.check?.status == "revoked" || ($0.daysLeft ?? 99) < 7 } }
-    var pending: Int { (server.state?.requests ?? []).filter { $0.status == "pending" }.count }
+    var pending: Int { (server.state?.requests ?? []).filter { $0.status == "pending" }.count + (server.state?.bugs ?? []).filter { $0.status == "open" }.count }
 
     var body: some View {
         TabView(selection: $router.tab) {
@@ -97,8 +97,8 @@ struct MainShell: View {
                     .badge(pending)
                     .tag(AppTab.users)
             }
-            TabPage(title: owner ? "Settings" : "Account") { SettingsTab() }
-                .tabItem { Label(owner ? "Settings" : "Account", systemImage: owner ? "gearshape.fill" : "person.crop.circle.fill") }
+            TabPage(title: server.isOwner ? "Settings" : "Account") { SettingsTab() }
+                .tabItem { Label(server.isOwner ? "Settings" : "Account", systemImage: server.isOwner ? "gearshape.fill" : "person.crop.circle.fill") }
                 .tag(AppTab.settings)
         }
         .toast($router.toast)

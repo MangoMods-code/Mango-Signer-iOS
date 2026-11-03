@@ -36,7 +36,7 @@ struct SignedTab: View {
         VStack(alignment: .leading, spacing: 0) {
             if signed.isEmpty && installs.isEmpty && local.signed.isEmpty {
                 WebEmpty(icon: "arrow.down.circle", title: "Nothing signed yet", text: "Signed apps show up here, ready to install.",
-                         button: "Go to \(server.isOwner ? "Library" : "App Library")") { router.tab = .library }
+                         button: "Go to \(server.isStaff ? "Library" : "App Library")") { router.tab = .library }
             } else {
                 phoneCard
                 let notes = notesText

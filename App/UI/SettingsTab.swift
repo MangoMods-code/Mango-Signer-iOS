@@ -12,7 +12,7 @@ struct SettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if server.isOwner { ownerSections }
+            if server.isOwner { ownerSections } else if server.isAdmin { adminSections }
             accountSection
             phoneSection
             Text("🥭 Mango Signer \(info?.version ?? "")\(server.isOwner ? " · signing powered by zsign (MIT)" : "")\n© 2026 MangoMods · All rights reserved")
@@ -174,6 +174,30 @@ struct SettingsTab: View {
         }
     }
 
+    // MARK: admins
+
+    @ViewBuilder
+    var adminSections: some View {
+        Hint(text: "⭐ You're an admin: you can manage the library and users. Server settings, GitHub, Telegram sign-in and backups stay with the owner.").padding(.bottom, 4)
+        SectionTitle(text: "Library")
+        let apps = server.state?.apps ?? []
+        ListBox {
+            ValueRow(title: "Apps", value: "\(apps.count) (\(apps.filter { $0.published != false }.count) shown)")
+            RowLine()
+            LinkRow(title: "☁ Sources & Telegram channels", value: "Website") { website("Sources") }
+            RowLine()
+            LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { website("Categories") }
+            RowLine()
+            LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { website("Tweaks") }
+        }
+        SectionTitle(text: "Tools")
+        ListBox {
+            LinkRow(title: "📊 Stats & activity") { website("Stats") }
+            RowLine()
+            LinkRow(title: "🛡 Security log") { router.open(.securityLog) }
+        }
+    }
+
     // MARK: account
 
     @ViewBuilder
@@ -186,7 +210,7 @@ struct SettingsTab: View {
             RowLine()
             LinkRow(title: "✨ What's New", value: "V\(info?.version ?? "")") { router.open(.whatsNew) }
             RowLine()
-            ValueRow(title: "Username", value: a?.username ?? "")
+            ValueRow(title: "Username", value: "\(a?.username ?? "")\(a?.rank.map { "  " + rankLabel($0) } ?? "")")
             RowLine()
             ValueRow(title: "iPhone", value: a?.udid != nil ? "\(a?.deviceName ?? "iPhone")\n\(shortUdid(a?.udid ?? ""))" : "Not linked")
             if let udid = a?.udid {
@@ -217,7 +241,23 @@ struct SettingsTab: View {
         }
         Hint(text: a?.udid != nil ? "Your iPhone can sign in without a password, and Mango checks whether it's in your profiles." : "Linking downloads a quick profile: open Settings › Profile Downloaded › Install, then come back.").padding(.top, 8)
 
-        if !server.isOwner {
+        if server.isTester {
+            SectionTitle(text: "🧪 Tester")
+            Hint(text: "You see apps marked for testers, beta versions first, and you have no daily sign limit. Found something broken? Tell the owner.").padding(.bottom, 10)
+            let bugs = server.state?.bugs ?? []
+            if !bugs.isEmpty {
+                ListBox {
+                    ForEach(Array(bugs.enumerated()), id: \.element.id) { i, b in
+                        if i > 0 { RowLine() }
+                        BugRow(b: b)
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+            WebButton(title: "🐞 Report a bug") { router.open(.reportBug(nil)) }
+        }
+
+        if !server.isStaff {
             SectionTitle(text: "My app requests")
             let reqs = server.state?.requests ?? []
             if !reqs.isEmpty {
@@ -266,7 +306,7 @@ struct SettingsTab: View {
 struct AlertsSheet: View {
     @EnvironmentObject var server: Server
     @EnvironmentObject var router: Router
-    let icons = ["broadcast": "📣", "update": "⬆️", "request": "🙋", "cert": "🔐", "security": "🔒", "user": "👋", "storage": "💾"]
+    let icons = ["bug": "🐞", "broadcast": "📣", "update": "⬆️", "request": "🙋", "cert": "🔐", "security": "🔒", "user": "👋", "storage": "💾"]
 
     var body: some View {
         let list = server.state?.alerts ?? []
@@ -323,7 +363,8 @@ struct AlertsSheet: View {
             if let rid = a.requestId, (server.state?.requests ?? []).contains(where: { $0.id == rid }) { router.open(.request(rid)) }
         case "cert": router.go(.certs)
         case "user": if let uid = a.userId, (server.state?.users ?? []).contains(where: { $0.id == uid }) { router.open(.user(uid)) }
-        case "security": if server.isOwner { router.open(.securityLog) }
+        case "security": if server.isStaff { router.open(.securityLog) }
+        case "bug": if let id = a.bugId, (server.state?.bugs ?? []).contains(where: { $0.id == id }) { router.open(.bug(id)) }
         case "storage": router.go(.settings)
         default: break
         }

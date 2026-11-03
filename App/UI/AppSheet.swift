@@ -31,7 +31,7 @@ struct AppSheet: View {
 
     @ViewBuilder
     func content(_ a: SApp) -> some View {
-        let owner = server.isOwner
+        let owner = server.isStaff
         let defaults = defaultsSummary(a.signDefaults ?? SignDefaults(), server)
         let pct: Int? = a.votes > 0 ? Int((Double(a.likes ?? 0) * 100 / Double(a.votes)).rounded()) : nil
         let versions = a.versions ?? []
@@ -60,6 +60,9 @@ struct AppSheet: View {
             if let inst = a.installed { installedNote(a, inst) }
             if !defaults.isEmpty { Hint(text: "Comes set up with: \(defaults.joined(separator: " · "))", center: true).padding(.top, 8) }
             LinkButton(title: "Sign with options…") { router.open(.sign(a.id, presetId: nil)) }
+            if server.seesTesterApps && !server.isOwner {
+                LinkButton(title: "🐞 Report a bug in this app") { router.open(.reportBug(a.id)) }.padding(.top, -10)
+            }
 
             if !shots.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -224,7 +227,7 @@ struct AppSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(v.version ?? "Version \(index + 1)").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text)
-                    if let c = v.channel, !c.isEmpty, c != "stable" { Badge(text: c, small: true) }
+                    if let c = v.channel, !c.isEmpty, c != "stable" { Badge(text: c, style: c.lowercased().hasPrefix("beta") ? .blue : .plain, small: true) }
                 }
                 let sub = [v.date.map { String($0.prefix(10)) } ?? "", formatBytes(v.size)].filter { !$0.isEmpty }.joined(separator: " · ")
                 if !sub.isEmpty { Text(sub).font(.system(size: 13)).foregroundStyle(Theme.muted) }
@@ -235,10 +238,10 @@ struct AppSheet: View {
                 }
             }
             Spacer(minLength: 4)
-            if server.isOwner, let mid = v.manualId {
+            if server.isStaff, let mid = v.manualId {
                 PillButton(title: "✕", danger: true) { removeVersion(a, mid) }
             }
-            PillButton(title: "Get") { router.quickGet(a, server: server, versionIndex: index) }
+            PillButton(title: "Get") { router.quickGet(a, server: server, versionIndex: v.vi ?? index) }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
     }
@@ -255,6 +258,9 @@ struct AppSheet: View {
             ToggleRow(title: "Show in App Library", sub: "Everyone you invite can sign and install it", isOn: Binding(get: { a.published != false }, set: { v in patch(a, ["published": v], v ? "Shown in App Library" : "Hidden from App Library") }))
             RowLine()
             ToggleRow(title: "Featured", sub: "Pinned to the top of the library", isOn: Binding(get: { a.featured == true }, set: { v in patch(a, ["featured": v], v ? "Featured ★" : "No longer featured") }))
+            RowLine()
+            ToggleRow(title: "Testers only", sub: "Only testers (and admins) can see it — a 🧪 For testers list shows at the top of their library",
+                      isOn: Binding(get: { a.testersOnly }, set: { v in patch(a, ["testersOnly": v], v ? "Only testers can see it now 🧪" : "Not just for testers anymore") }))
         }
         .padding(.top, 14)
         VStack(spacing: 10) {

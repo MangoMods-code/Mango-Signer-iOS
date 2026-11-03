@@ -115,10 +115,13 @@ struct Account: Decodable {
     var role: String
     var udid: String?
     var deviceName: String?
+    /// "admin" or "tester" (given by the owner), nil for everyone else.
+    var rank: String?
     var isOwner: Bool { role == "owner" }
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         role = c.str("role") ?? "user"
+        rank = c.str("rank")
         id = c.str("id") ?? (role == "owner" ? "owner" : "")
         username = c.str("username") ?? id
         udid = c.str("udid"); deviceName = c.str("deviceName")
@@ -203,6 +206,8 @@ struct SInstalled: Decodable {
 }
 
 struct SVersion: Decodable {
+    /// The version's real number for signing (lists may skip beta versions for non-testers).
+    var vi: Int?
     var version: String?
     var date: String?
     var size: Double?
@@ -211,6 +216,7 @@ struct SVersion: Decodable {
     var manualId: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
+        vi = c.int("vi")
         version = c.str("version"); date = c.str("date"); size = c.num("size"); notes = c.str("notes")
         channel = c.str("channel"); manualId = c.str("manualId")
     }
@@ -256,6 +262,7 @@ struct SApp: Decodable, Identifiable {
     var hasWatch: Bool?
     var signDefaults: SignDefaults?
     var remoteUrl: String?
+    var testersOnly = false
 
     struct NoId: Error {}
     init(from decoder: Decoder) throws {
@@ -281,6 +288,7 @@ struct SApp: Decodable, Identifiable {
         extensions = c.int("extensions"); hasWatch = c.bool("hasWatch")
         signDefaults = c.obj("signDefaults")
         remoteUrl = c.str("remoteUrl")
+        testersOnly = c.bool("testersOnly") ?? false
         let added = parseDate(addedAt), updated = parseDate(updatedAt)
         isNew = Date().timeIntervalSince(added ?? .distantPast) < 3 * 86400
         isUpdatedRecently = !isNew && previousVersion != nil && Date().timeIntervalSince(updated ?? .distantPast) < 3 * 86400
@@ -432,16 +440,18 @@ struct SAlert: Decodable, Identifiable {
     var appId: String?
     var requestId: String?
     var userId: String?
+    var bugId: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         id = c.str("id") ?? UUID().uuidString; kind = c.str("kind"); title = c.str("title"); body = c.str("body")
-        at = c.str("at"); read = c.bool("read"); appId = c.str("appId"); requestId = c.str("requestId"); userId = c.str("userId")
+        at = c.str("at"); read = c.bool("read"); appId = c.str("appId"); requestId = c.str("requestId"); userId = c.str("userId"); bugId = c.str("bugId")
     }
 }
 
 struct SSettings: Decodable {
     var signsPerDay: Int?
     var signsToday: Int?
+    var everyoneSignsPerDay: Int?
     var maxSignedPerUser: Int?
     var signedRetentionDays: Int?
     var signedOnGithub: Bool?
@@ -451,7 +461,7 @@ struct SSettings: Decodable {
     var lastBackup: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
-        signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday"); maxSignedPerUser = c.int("maxSignedPerUser")
+        signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday"); everyoneSignsPerDay = c.int("everyoneSignsPerDay"); maxSignedPerUser = c.int("maxSignedPerUser")
         signedRetentionDays = c.int("signedRetentionDays"); signedOnGithub = c.bool("signedOnGithub"); zipLevel = c.int("zipLevel")
         deleteAfterInstall = c.bool("deleteAfterInstall"); udidLogin = c.bool("udidLogin"); lastBackup = c.str("lastBackup")
     }
@@ -587,9 +597,27 @@ struct SSignin: Decodable, Identifiable {
     }
 }
 
+struct SBug: Decodable, Identifiable {
+    var id: String
+    var username: String?
+    var text: String
+    var appId: String?
+    var appName: String?
+    var device: String?
+    var status: String
+    var reply: String?
+    var createdAt: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; username = c.str("username"); text = c.str("text") ?? ""; appId = c.str("appId")
+        appName = c.str("appName"); device = c.str("device"); status = c.str("status") ?? "open"; reply = c.str("reply"); createdAt = c.str("createdAt")
+    }
+}
+
 struct SUser: Decodable, Identifiable {
     var id: String
     var username: String
+    var rank: String?
     var udid: String?
     var deviceName: String?
     var createdAt: String?
@@ -603,7 +631,7 @@ struct SUser: Decodable, Identifiable {
     var recentSignins: [SSignin]
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
-        id = c.str("id") ?? UUID().uuidString; username = c.str("username") ?? "?"; udid = c.str("udid"); deviceName = c.str("deviceName")
+        id = c.str("id") ?? UUID().uuidString; username = c.str("username") ?? "?"; rank = c.str("rank"); udid = c.str("udid"); deviceName = c.str("deviceName")
         createdAt = c.str("createdAt"); lastLogin = c.str("lastLogin"); disabled = c.bool("disabled") ?? false; invite = c.str("invite")
         certCount = c.int("certCount") ?? 0; signedCount = c.int("signedCount") ?? 0; signLimit = c.int("signLimit"); signsToday = c.int("signsToday") ?? 0
         recentSignins = c.list("recentSignins") ?? []
@@ -634,6 +662,7 @@ struct ServerState: Decodable {
     var presets: [SPreset]
     var installs: [SInstallLog]
     var requests: [SRequest]
+    var bugs: [SBug]
     var invites: [SInvite]
     var users: [SUser]
     var mySignins: [SSignin]
@@ -659,6 +688,7 @@ struct ServerState: Decodable {
         presets = c.list("presets") ?? []
         installs = c.list("installs") ?? []
         requests = c.list("requests") ?? []
+        bugs = c.list("bugs") ?? []
         invites = c.list("invites") ?? []
         users = c.list("users") ?? []
         mySignins = c.list("mySignins") ?? []
@@ -789,6 +819,11 @@ final class Server: ObservableObject {
 
     var account: Account? { state?.account }
     var isOwner: Bool { account?.isOwner == true }
+    /// Admins help run the library and users; testers see "Testers only" apps and beta versions first.
+    var isAdmin: Bool { account?.isOwner == false && account?.rank == "admin" }
+    var isStaff: Bool { isOwner || isAdmin }
+    var isTester: Bool { account?.isOwner == false && account?.rank == "tester" }
+    var seesTesterApps: Bool { isStaff || isTester }
 
     private let session: URLSession = {
         let c = URLSessionConfiguration.default

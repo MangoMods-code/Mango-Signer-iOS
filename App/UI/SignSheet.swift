@@ -94,7 +94,7 @@ struct SignSheet: View {
         certId = server.defaultCert?.id ?? ""
         localCertId = local.defaultCert?.id
         if certs.isEmpty && !local.certs.isEmpty { place = .phone }
-        versionIndex = min(d.versionIndex, max(0, (a.versions?.count ?? 1) - 1))
+        versionIndex = (a.versions ?? []).contains { ($0.vi ?? -1) == d.versionIndex } ? d.versionIndex : 0
         minOS = d.minOS
         for p in SignPresets.ent { ent[p.key] = d.entitlements.contains { $0.key == p.key } }
         for p in SignPresets.plist { plist[p.key] = d.plist.contains { $0.key == p.key } }
@@ -136,7 +136,7 @@ struct SignSheet: View {
         if let versions = a.versions, versions.count > 1 {
             Field(label: "App version") {
                 SelectBox(selection: $versionIndex, options: versions.enumerated().map { i, v in
-                    (i, "\(v.version ?? "Version \(i + 1)")\(i == 0 ? " (newest)" : "")\(v.date.map { " · " + String($0.prefix(10)) } ?? "")")
+                    (v.vi ?? i, "\(v.version ?? "Version \(i + 1)")\(i == 0 ? " (newest)" : "")\((v.channel ?? "").lowercased().hasPrefix("beta") ? " · beta" : "")\(v.date.map { " · " + String($0.prefix(10)) } ?? "")")
                 })
             }
         }
@@ -530,7 +530,7 @@ struct SigningSheet: View {
         title = "Signing on this iPhone…"; sub = "Big apps can take a minute"; progress = nil
         var iconData: Data?
         if let u = server.iconURL(run.app) { iconData = await ImageCache.shared.image(u)?.pngData() }
-        let version = vi == 0 ? run.app.shownVersion : (run.app.versions?[safe: vi]?.version ?? run.app.shownVersion)
+        let version = vi == 0 ? run.app.shownVersion : (run.app.versions?.first { ($0.vi ?? -1) == vi }?.version ?? run.app.shownVersion)
         let s = try await local.signFile(file, name: run.app.name, bundleId: run.app.bundleId ?? "", version: version,
                                          icon: iconData, with: cert, options: plan.options)
         router.locked = false

@@ -14,6 +14,7 @@ enum Lib {
         case "featured": return a.featured == true
         case "none": return server.category(a.categoryId) == nil
         case "hidden": return a.published == false
+        case "testers": return a.testersOnly
         case "missing": return a.missing == true
         case "cloud:github": return a.cloud == "github"
         case "cloud:link": return a.cloud == "link"
@@ -38,15 +39,15 @@ enum Lib {
         let tags = Array(Set(apps.flatMap { $0.tags ?? [] })).sorted()
         let srcs = Array(Set(apps.filter { $0.isSourceApp }.compactMap { $0.sourceName })).sorted()
         var g: [Group] = [
-            Group(title: "Show", items: [("all", "📱 All"), ("favorites", "♥ Favorites"), ("installed", "✓ Installed"), ("updates", "⬆ Updates"), ("new", "🆕 New"), ("featured", "★ Featured")]),
+            Group(title: "Show", items: [("all", "📱 All"), ("favorites", "♥ Favorites"), ("installed", "✓ Installed"), ("updates", "⬆ Updates"), ("new", "🆕 New"), ("featured", "★ Featured")] + (server.seesTesterApps ? [("testers", "🧪 Testers")] : [])),
             Group(title: "Categories", items: (server.state?.categories ?? []).sorted { ($0.order ?? 0) < ($1.order ?? 0) }.map { ($0.id, "\($0.emoji ?? "") \($0.name)") }),
             Group(title: "Sources", items: srcs.map { n in ("src:\(n)", "\(apps.contains { $0.cloud == "telegram" && $0.sourceName == n } ? "✈️" : "☁") \(n)") }),
             Group(title: "Tags", items: tags.map { ("tag:\($0)", "# \($0)") }),
         ]
-        if server.isOwner {
+        if server.isStaff {
             g.append(Group(title: "Owner", items: [("cloud:github", "☁ On GitHub"), ("cloud:link", "🔗 Links"), ("none", "Uncategorized"), ("hidden", "Hidden"), ("missing", "⚠ Removed")]))
         }
-        return g.map { x in Group(title: x.title, items: x.items.filter { $0.0 == "all" || count($0.0, server) > 0 || (x.title == "Categories" && server.isOwner) }) }
+        return g.map { x in Group(title: x.title, items: x.items.filter { $0.0 == "all" || count($0.0, server) > 0 || (x.title == "Categories" && server.isStaff) }) }
             .filter { !$0.items.isEmpty }
     }
 
@@ -92,7 +93,8 @@ enum Lib {
         else if a.installed != nil { b.append(Badge(text: "✓ Installed", style: .good, small: true)) }
         if a.isNew { b.append(Badge(text: "NEW", style: .new, small: true)) } else if a.isUpdatedRecently { b.append(Badge(text: "UPDATED", style: .new, small: true)) }
         if !compact {
-            if server.isOwner && a.published == false { b.append(Badge(text: "Hidden", small: true)) }
+            if a.testersOnly && server.seesTesterApps { b.append(Badge(text: "🧪 Testers", style: .blue, small: true)) }
+            if server.isStaff && a.published == false && !a.testersOnly { b.append(Badge(text: "Hidden", small: true)) }
             if a.missing == true { b.append(Badge(text: "Removed from source", style: .bad, small: true)) }
             if let c = cloudBadge(a, server) { b.append(Badge(text: c, style: .cloud, small: true)) }
         }
@@ -103,8 +105,8 @@ enum Lib {
         switch a.cloud {
         case "source": return "☁ \(a.sourceName ?? "Source")"
         case "telegram": return "✈️ \(a.sourceName ?? "Telegram")"
-        case "github": return server.isOwner ? "☁ GitHub" : nil
-        case "link": return server.isOwner ? "🔗 Link" : nil
+        case "github": return server.isStaff ? "☁ GitHub" : nil
+        case "link": return server.isStaff ? "🔗 Link" : nil
         default: return nil
         }
     }
@@ -263,13 +265,18 @@ struct LibraryTab: View {
         let list = Lib.filtered(server, cat: cat, query: router.libQuery, sort: router.libSort)
         if apps.isEmpty {
             WebEmpty(icon: "shippingbox", title: "No apps yet",
-                     text: server.isOwner ? "Add an .ipa or a source on the website. Apps you add show up here for everyone you invite." : "The owner hasn't added any apps yet. Want something? Request it!",
-                     button: server.isOwner ? nil : "Request an App") { router.open(.requestApp) }
+                     text: server.isStaff ? "Add an .ipa or a source on the website. Apps you add show up here for everyone you invite." : "The owner hasn't added any apps yet. Want something? Request it!",
+                     button: server.isStaff ? nil : "Request an App") { router.open(.requestApp) }
         } else if list.isEmpty {
             WebEmpty(icon: "magnifyingglass", title: "Nothing found",
                      text: router.libQuery.isEmpty ? "Nothing here yet." : "No apps match “\(router.libQuery)”.",
-                     button: server.isOwner ? nil : "Request an App") { router.open(.requestApp) }
+                     button: server.isStaff ? nil : "Request an App") { router.open(.requestApp) }
         } else if cat == "all" && router.libQuery.isEmpty && router.libSort == "smart" {
+            let forTesters = server.seesTesterApps ? list.filter { $0.testersOnly } : []
+            if !forTesters.isEmpty {
+                SectionTitle(text: "🧪 For testers", count: forTesters.count)
+                MiniShelf(apps: forTesters, sub: { $0.shownVersion })
+            }
             let updates = list.filter { $0.hasUpdate }
             if !updates.isEmpty {
                 SectionTitle(text: "⬆ Updates for you", count: updates.count)
@@ -457,7 +464,7 @@ struct FilterSheet: View {
                     }
                 }
             }
-            if !server.isOwner {
+            if !server.isStaff {
                 WebButton(title: "+ Request an App") { router.open(.requestApp) }.padding(.top, 16)
             }
         }
@@ -474,7 +481,7 @@ struct RequestAppSheet: View {
     var body: some View {
         SheetScroll {
             SheetTitle(text: "Request an App")
-            Hint(text: "Ask for an app to be added to the library. You'll see the answer in \(server.isOwner ? "Users" : "Account") › Requests.").padding(.bottom, 12)
+            Hint(text: "Ask for an app to be added to the library. You'll see the answer in \(server.isStaff ? "Users" : "Account") › Requests.").padding(.bottom, 12)
             Field(label: "App name") { TextField("e.g. Delta Emulator", text: $name).inputStyle() }
             Field(label: "Link (optional)") { TextField("Where to find it", text: $link).plainInput().keyboardType(.URL).inputStyle() }
             Field(label: "Anything else? (optional)") { TextField("Version, tweaks you want, why…", text: $note, axis: .vertical).lineLimit(3...6).inputStyle() }

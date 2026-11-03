@@ -11,7 +11,7 @@ struct RequestRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(r.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                Text("\(server.isOwner ? "\(r.username ?? "?") · " : "")\(ago(r.createdAt))\(r.reply?.isEmpty == false ? " · “\(r.reply!)”" : "")")
+                Text("\(server.isStaff ? "\(r.username ?? "?") · " : "")\(ago(r.createdAt))\(r.reply?.isEmpty == false ? " · “\(r.reply!)”" : "")")
                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
             }
             Spacer()
@@ -43,6 +43,21 @@ struct UsersTab: View {
                     ForEach(Array((pending + others).enumerated()), id: \.element.id) { i, r in
                         if i > 0 { RowLine() }
                         RequestRow(r: r)
+                    }
+                }
+            }
+            let bugs = server.state?.bugs ?? []
+            if !bugs.isEmpty {
+                let open = bugs.filter { $0.status == "open" }
+                HStack(spacing: 6) {
+                    SectionTitle(text: "🐞 Bug reports")
+                    if !open.isEmpty { Badge(text: "\(open.count) open", style: .mango, small: true).padding(.top, 10) }
+                }
+                ListBox {
+                    let shown = open + Array(bugs.filter { $0.status != "open" }.prefix(10))
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { i, b in
+                        if i > 0 { RowLine() }
+                        BugRow(b: b)
                     }
                 }
             }
@@ -85,6 +100,7 @@ struct UsersTab: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
                                     Text(u.username).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text)
+                                    if let r = u.rank { Badge(text: rankLabel(r), style: r == "tester" ? .blue : .mango, small: true) }
                                     if u.disabled { Badge(text: "Off", style: .bad, small: true) }
                                 }
                                 Text("\(u.deviceName ?? "No iPhone linked") · \(u.certCount) cert\(u.certCount == 1 ? "" : "s") · \(u.signedCount) signed").font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
@@ -191,10 +207,23 @@ struct UserSheet: View {
                         .frame(width: 76, height: 76).background(LinearGradient(colors: [Theme.card2, Theme.icon], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(Circle())
                 }
                 KVList(items: kv(u))
-                ListBox(fill: Theme.bg2) {
-                    PickerRow(title: "Signs per day", selection: Binding(get: { u.signLimit ?? -1 }, set: { v in setLimit(u, v) }), options: limitOptions)
+                let locked = u.rank == "admin" && !server.isOwner
+                if server.isOwner {
+                    ListBox(fill: Theme.bg2) {
+                        PickerRow(title: "Role", sub: "Admins help run the library and users. Testers see apps for testers and beta versions first.",
+                                  selection: Binding(get: { u.rank ?? "" }, set: { v in setRank(u, v) }),
+                                  options: [("", "Member"), ("tester", "🧪 Tester"), ("admin", "⭐ Admin")])
+                    }
+                    .padding(.top, 12)
+                } else if let r = u.rank {
+                    Hint(text: "\(rankLabel(r))\(r == "admin" ? " · only the owner can change admins" : "")").padding(.top, 10)
                 }
-                .padding(.top, 12)
+                if !locked {
+                    ListBox(fill: Theme.bg2) {
+                        PickerRow(title: "Signs per day", selection: Binding(get: { u.signLimit ?? -1 }, set: { v in setLimit(u, v) }), options: limitOptions)
+                    }
+                    .padding(.top, 12)
+                }
                 if !u.recentSignins.isEmpty {
                     SectionTitle(text: "Recent sign-ins")
                     ListBox(fill: Theme.bg2) {
@@ -206,11 +235,13 @@ struct UserSheet: View {
                 }
                 VStack(spacing: 10) {
                     if let udid = u.udid { WebButton(title: "Copy UDID") { UIPasteboard.general.string = udid; router.say("UDID copied") } }
+                    if !locked {
                     WebButton(title: "Reset password") { newPassword = ""; resetting = true }
                     WebButton(title: "Sign them out everywhere") { patch(u, ["signOut": true], "\(u.username) is signed out on every device") }
                     if u.udid != nil { WebButton(title: "Unlink iPhone") { patch(u, ["unlinkDevice": true], "iPhone unlinked") } }
                     WebButton(title: u.disabled ? "Turn account on" : "Turn account off") { patch(u, ["disabled": !u.disabled], u.disabled ? "Account turned on" : "Account turned off") }
                     WebButton(title: "Delete account", kind: .danger) { confirmDelete = true }
+                    }
                 }
                 .padding(.top, 12)
                 .alert("New password for \(u.username)", isPresented: $resetting) {
@@ -241,8 +272,18 @@ struct UserSheet: View {
         return items
     }
 
+    func setRank(_ u: SUser, _ v: String) {
+        Task {
+            do {
+                try await server.post("/api/users/\(u.id)", ["rank": v.isEmpty ? NSNull() : v], method: "PATCH")
+                await server.refresh()
+                router.say(v.isEmpty ? "\(u.username) is a member again" : "\(u.username) is now \(v == "admin" ? "an admin ⭐" : "a tester 🧪")")
+            } catch { router.say(error.localizedDescription) }
+        }
+    }
+
     var limitOptions: [(Int, String)] {
-        let everyone = server.state?.settings?.signsPerDay ?? 0
+        let everyone = server.isOwner ? (server.state?.settings?.signsPerDay ?? 0) : (server.state?.settings?.everyoneSignsPerDay ?? 0)
         return [(-1, "Everyone's limit (\(everyone > 0 ? "\(everyone)" : "none"))"), (0, "No limit"), (3, "3"), (5, "5"), (10, "10"), (20, "20"), (50, "50")]
     }
 
@@ -297,7 +338,7 @@ struct RequestSheet: View {
                         .background(Theme.mango.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 if let app { WebButton(title: "Open \(app.name)", kind: .primary) { router.open(.app(app.id)) }.padding(.top, 8) }
-                if server.isOwner {
+                if server.isStaff {
                     Field(label: "Reply (optional)") { TextField("e.g. Added! Turn on JIT first", text: $reply).inputStyle() }.padding(.top, 12)
                     Field(label: "Link it to a library app (optional)") {
                         SelectBox(selection: $linkApp, options: [("", "—")] + (server.state?.apps ?? []).map { ($0.id, $0.name) })
@@ -307,7 +348,7 @@ struct RequestSheet: View {
                         WebButton(title: "✕ Decline") { set(r, "declined") }
                     }
                 }
-                if server.isOwner || r.status == "pending" {
+                if server.isStaff || r.status == "pending" {
                     WebButton(title: "Delete request", kind: .danger) {
                         Task { do { _ = try await server.data("DELETE", "/api/requests/\(r.id)"); await server.refresh(); router.say("Deleted"); router.close() } catch { router.say(error.localizedDescription) } }
                     }
@@ -320,7 +361,7 @@ struct RequestSheet: View {
 
     func kv(_ r: SRequest) -> [(String, String)] {
         var items: [(String, String)] = []
-        if server.isOwner { items.append(("From", r.username ?? "?")) }
+        if server.isStaff { items.append(("From", r.username ?? "?")) }
         items.append(("Asked", ago(r.createdAt)))
         items.append(("Status", requestStatus[r.status]?.0 ?? r.status))
         if let l = r.link, !l.isEmpty { items.append(("Link", l)) }
@@ -333,6 +374,117 @@ struct RequestSheet: View {
                 try await server.post("/api/requests/\(r.id)", ["status": status, "reply": reply, "appId": linkApp], method: "PATCH")
                 await server.refresh(); router.say(status == "added" ? "Marked as added" : "Declined"); router.close()
             } catch { router.say(error.localizedDescription) }
+        }
+    }
+}
+
+
+func rankLabel(_ r: String) -> String { r == "admin" ? "⭐ Admin" : r == "tester" ? "🧪 Tester" : r }
+
+// MARK: - Bug reports (testers and admins send them; you and admins answer)
+
+let bugStatus: [String: (String, BadgeStyle)] = ["open": ("🐞 Open", .plain), "fixed": ("✅ Fixed", .good), "wontfix": ("✕ Won't fix", .bad)]
+
+struct BugRow: View {
+    @EnvironmentObject var server: Server
+    @EnvironmentObject var router: Router
+    let b: SBug
+    var body: some View {
+        let st = bugStatus[b.status] ?? bugStatus["open"]!
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(b.appName ?? "General").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                Text("\(server.isStaff ? "\(b.username ?? "?") · " : "")\(ago(b.createdAt)) · \(b.text.split(separator: "\n").first.map(String.init) ?? "")")
+                    .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
+            }
+            Spacer()
+            Badge(text: st.0, style: st.1)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { router.open(.bug(b.id)) }
+    }
+}
+
+struct ReportBugSheet: View {
+    @EnvironmentObject var server: Server
+    @EnvironmentObject var router: Router
+    let appId: String?
+    @State private var app = ""
+    @State private var text = ""
+    @State private var busy = false
+    @State private var loaded = false
+    var body: some View {
+        SheetScroll {
+            SheetTitle(text: "🐞 Report a bug")
+            Hint(text: "It goes straight to the owner\(server.isAdmin ? "" : " and admins"). Say what you did and what went wrong.").padding(.bottom, 12)
+            Field(label: "App") {
+                SelectBox(selection: $app, options: [("", "Mango Signer itself / general")] + (server.state?.apps ?? []).map { ($0.id, $0.name) })
+            }
+            Field(label: "What happened?") {
+                TextField("e.g. Crashes when I open the settings page", text: $text, axis: .vertical).lineLimit(4...10).inputStyle()
+            }
+            WebButton(title: busy ? "Sending…" : "Send Report", kind: .primary, big: true, disabled: busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                busy = true
+                Task {
+                    defer { busy = false }
+                    do {
+                        try await server.post("/api/bugs", ["text": text, "appId": app.isEmpty ? NSNull() : app])
+                        await server.refresh(); router.close(); router.say("Thanks! Report sent 🐞")
+                    } catch { router.say(error.localizedDescription) }
+                }
+            }
+        }
+        .onAppear { if !loaded { app = appId ?? ""; loaded = true } }
+    }
+}
+
+struct BugSheet: View {
+    @EnvironmentObject var server: Server
+    @EnvironmentObject var router: Router
+    let bugId: String
+    @State private var reply = ""
+    @State private var loaded = false
+    var body: some View {
+        SheetScroll {
+            if let b = server.state?.bugs.first(where: { $0.id == bugId }) {
+                SheetTitle(text: "🐞 \(b.appName ?? "General")")
+                KVList(items: kv(b))
+                Text(b.text).font(.system(size: 15)).foregroundStyle(Theme.soft).textSelection(.enabled).padding(.vertical, 6)
+                if let r = b.reply, !r.isEmpty {
+                    Text("💬 \(r)").font(.subheadline).foregroundStyle(Theme.soft).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.mango.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                if let id = b.appId, server.app(id) != nil { WebButton(title: "Open \(b.appName ?? "app")") { router.open(.app(id)) }.padding(.top, 8) }
+                if server.isStaff {
+                    Field(label: "Reply (optional)") { TextField("e.g. Fixed in the next version", text: $reply).inputStyle() }.padding(.top, 12)
+                    HStack(spacing: 8) {
+                        WebButton(title: "✅ Fixed") { set(b, "fixed") }
+                        WebButton(title: "✕ Won't fix") { set(b, "wontfix") }
+                        WebButton(title: "Reopen") { set(b, "open") }
+                    }
+                }
+                WebButton(title: "Delete report", kind: .danger) {
+                    Task { do { _ = try await server.data("DELETE", "/api/bugs/\(b.id)"); await server.refresh(); router.say("Deleted"); router.close() } catch { router.say(error.localizedDescription) } }
+                }
+                .padding(.top, 8)
+                Color.clear.frame(height: 0).onAppear { if !loaded { reply = b.reply ?? ""; loaded = true } }
+            } else {
+                WebEmpty(icon: "ladybug", title: "Not found", text: "This report was deleted.")
+            }
+        }
+    }
+    func kv(_ b: SBug) -> [(String, String)] {
+        var items: [(String, String)] = []
+        if server.isStaff { items.append(("From", b.username ?? "?")) }
+        items.append(("Sent", ago(b.createdAt)))
+        items.append(("Status", bugStatus[b.status]?.0 ?? b.status))
+        if let d = b.device, !d.isEmpty { items.append(("Device", d)) }
+        return items
+    }
+    func set(_ b: SBug, _ status: String) {
+        Task {
+            do { try await server.post("/api/bugs/\(b.id)", ["status": status, "reply": reply], method: "PATCH"); await server.refresh(); router.say("Saved"); router.close() } catch { router.say(error.localizedDescription) }
         }
     }
 }
