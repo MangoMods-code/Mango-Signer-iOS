@@ -211,6 +211,15 @@ enum CertReader {
         )
     }
 
+    /// The entitlements a profile allows (used as the starting point for custom entitlements).
+    static func entitlements(_ data: Data) throws -> [String: Any] {
+        guard let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex) else { return [:] }
+        let xml = data.subdata(in: start.lowerBound..<end.upperBound)
+        let p = try PropertyListSerialization.propertyList(from: xml, format: nil) as? [String: Any]
+        return p?["Entitlements"] as? [String: Any] ?? [:]
+    }
+
     /// Checks the .p12 password. Returns the certificate's name when iOS can read it, or nil if iOS can't
     /// open this kind of .p12 (zsign may still can, so that's not treated as an error).
     static func p12Name(_ data: Data, password: String) throws -> String? {
@@ -233,10 +242,17 @@ struct SignOptions {
     var name = ""
     var bundleId = ""
     var version = ""
+    var minOS = ""
+    var icon: URL?
     var removeExtensions = false
+    var removeWatch = false
     var removeDeviceLimits = false
     var fileSharing = false
     var dylibs: [URL] = []
+    var weakDylibs = false
+    var injectExtensions = false
+    /// Entitlement changes (on top of what the profile allows): key -> value, nil removes the key.
+    var entitlementEdits: [(String, Any?)] = []
 }
 
 enum Signer {
@@ -247,14 +263,28 @@ enum Signer {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let logURL = tmp.appendingPathComponent("zsign.log")
 
-        var args = ["zsign", "-k", p12.path, "-p", password, "-m", provision.path, "-z", "1", "-t", tmp.path, "-o", output.path]
+        var args = ["zsign", "-f", "-k", p12.path, "-p", password, "-m", provision.path, "-z", "1", "-t", tmp.path, "-o", output.path]
         if !options.bundleId.isEmpty { args += ["-b", options.bundleId] }
         if !options.name.isEmpty { args += ["-n", options.name] }
         if !options.version.isEmpty { args += ["-r", options.version] }
+        if !options.minOS.isEmpty { args += ["-M", options.minOS] }
+        if let icon = options.icon { args += ["-I", icon.path] }
+        if !options.entitlementEdits.isEmpty {
+            // Start from what the profile allows, then apply the changes.
+            var ent = (try? CertReader.entitlements(Data(contentsOf: provision))) ?? [:]
+            for (k, v) in options.entitlementEdits { if let v { ent[k] = v } else { ent.removeValue(forKey: k) } }
+            let entURL = tmp.appendingPathComponent("entitlements.plist")
+            let data = try PropertyListSerialization.data(fromPropertyList: ent, format: .xml, options: 0)
+            try data.write(to: entURL)
+            args += ["-e", entURL.path]
+        }
         if options.removeExtensions { args.append("-E") }
+        if options.removeWatch { args.append("-W") }
         if options.removeDeviceLimits { args.append("-U") }
         if options.fileSharing { args.append("-S") }
         for d in options.dylibs { args += ["-l", d.path] }
+        if !options.dylibs.isEmpty && options.weakDylibs { args.append("-w") }
+        if !options.dylibs.isEmpty && options.injectExtensions { args.append("-P") }
         args.append(input.path)
 
         var cargs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) }

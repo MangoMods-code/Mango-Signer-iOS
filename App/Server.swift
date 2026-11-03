@@ -33,7 +33,52 @@ struct FlexString: Decodable {
     }
 }
 
+/// Any JSON value (used for entitlement values and other free-form settings).
+enum JSONValue: Decodable, Hashable {
+    case string(String), number(Double), bool(Bool), array([JSONValue]), object([String: JSONValue]), null
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let b = try? c.decode(Bool.self) { self = .bool(b) }
+        else if let d = try? c.decode(Double.self) { self = .number(d) }
+        else if let s = try? c.decode(String.self) { self = .string(s) }
+        else if let a = try? c.decode([JSONValue].self) { self = .array(a) }
+        else if let o = try? c.decode([String: JSONValue].self) { self = .object(o) }
+        else { self = .null }
+    }
+
+    var any: Any {
+        switch self {
+        case .string(let s): return s
+        case .number(let d): return d == d.rounded() && abs(d) < 1e15 ? Int(d) as Any : d as Any
+        case .bool(let b): return b
+        case .array(let a): return a.map { $0.any }
+        case .object(let o): return o.mapValues { $0.any }
+        case .null: return NSNull()
+        }
+    }
+    var text: String {
+        switch self {
+        case .string(let s): return s
+        case .number(let d): return d == d.rounded() && abs(d) < 1e15 ? String(Int(d)) : String(d)
+        case .bool(let b): return b ? "true" : "false"
+        default: return ""
+        }
+    }
+    /// What an entitlement value means for "does the profile allow this".
+    var allows: Bool {
+        switch self {
+        case .bool(let b): return b
+        case .array(let a): return !a.isEmpty
+        case .string(let s): return !s.isEmpty
+        default: return false
+        }
+    }
+}
+
 extension KeyedDecodingContainer where Key == AnyKey {
+    func has(_ k: String) -> Bool { contains(AnyKey(k)) && !((try? decodeNil(forKey: AnyKey(k))) ?? true) }
     func str(_ k: String) -> String? { (try? decodeIfPresent(FlexString.self, forKey: AnyKey(k)))?.value }
     func num(_ k: String) -> Double? {
         let key = AnyKey(k)
@@ -59,6 +104,7 @@ extension KeyedDecodingContainer where Key == AnyKey {
         guard let items = try? decodeIfPresent([Lossy<T>].self, forKey: AnyKey(k)) else { return nil }
         return items.compactMap { $0.value }
     }
+    func json(_ k: String) -> JSONValue? { try? decodeIfPresent(JSONValue.self, forKey: AnyKey(k)) }
 }
 
 private func keyed(_ decoder: Decoder) throws -> KeyedDecodingContainer<AnyKey> { try decoder.container(keyedBy: AnyKey.self) }
@@ -76,6 +122,72 @@ struct Account: Decodable {
         id = c.str("id") ?? (role == "owner" ? "owner" : "")
         username = c.str("username") ?? id
         udid = c.str("udid"); deviceName = c.str("deviceName")
+    }
+}
+
+/// One custom entitlement or Info.plist change: key, kind of value, and the value.
+struct EditRow: Identifiable, Hashable, Decodable {
+    var id = UUID()
+    var key: String = ""
+    var type: String = "bool"   // bool, string, number, delete
+    var boolValue = true
+    var textValue = ""
+
+    init(key: String = "", type: String = "bool", boolValue: Bool = true, textValue: String = "") {
+        self.key = key; self.type = type; self.boolValue = boolValue; self.textValue = textValue
+    }
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        key = c.str("key") ?? ""
+        type = c.str("type") ?? "bool"
+        let v = c.json("value") ?? .null
+        if case .bool(let b) = v { boolValue = b } else { boolValue = type == "bool" ? (v.text == "true") : true }
+        textValue = v.text
+    }
+    var json: [String: Any] {
+        var value: Any = true
+        switch type {
+        case "bool": value = boolValue
+        case "number": value = Double(textValue) ?? 0
+        case "string": value = textValue
+        default: value = NSNull()
+        }
+        return ["key": key.trimmingCharacters(in: .whitespaces), "type": type, "value": value]
+    }
+}
+
+/// How an app (or a preset) signs by default.
+struct SignDefaults: Decodable, Hashable {
+    var minOS = ""
+    var entitlements: [EditRow] = []
+    var plist: [EditRow] = []
+    var removeExtensions = false
+    var removeWatch: Bool?
+    var removeUISD = false
+    var enableDocs = false
+    var weakDylibs = false
+    var injectExtensions = false
+    var tweakIds: [String] = []
+    var versionIndex = 0
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        minOS = c.str("minOS") ?? ""
+        entitlements = c.list("entitlements") ?? []
+        plist = c.list("plist") ?? []
+        removeExtensions = c.bool("removeExtensions") ?? false
+        removeWatch = c.bool("removeWatch")
+        removeUISD = c.bool("removeUISD") ?? false
+        enableDocs = c.bool("enableDocs") ?? false
+        weakDylibs = c.bool("weakDylibs") ?? false
+        injectExtensions = c.bool("injectExtensions") ?? false
+        tweakIds = c.strings("tweakIds") ?? []
+        versionIndex = c.int("versionIndex") ?? 0
+    }
+    var isEmpty: Bool {
+        minOS.isEmpty && entitlements.isEmpty && plist.isEmpty && !removeExtensions && removeWatch != true && !removeUISD
+            && !enableDocs && !weakDylibs && !injectExtensions && tweakIds.isEmpty
     }
 }
 
@@ -104,6 +216,8 @@ struct SVersion: Decodable {
     }
 }
 
+struct SShot: Decodable { var id: String; init(from decoder: Decoder) throws { id = try keyed(decoder).str("id") ?? "" } }
+
 struct SApp: Decodable, Identifiable {
     var id: String
     var name: String
@@ -121,6 +235,7 @@ struct SApp: Decodable, Identifiable {
     var published: Bool?
     var hasIcon: Bool?
     var customIcon: Bool?
+    var useIconWhenSigning: Bool?
     var iconVersion: Double?
     var addedAt: String?
     var updatedAt: String?
@@ -135,7 +250,12 @@ struct SApp: Decodable, Identifiable {
     var missing: Bool?
     var versions: [SVersion]?
     var remoteScreens: [String]?
+    var screenshots: [SShot]?
     var tags: [String]?
+    var extensions: Int?
+    var hasWatch: Bool?
+    var signDefaults: SignDefaults?
+    var remoteUrl: String?
 
     struct NoId: Error {}
     init(from decoder: Decoder) throws {
@@ -148,6 +268,7 @@ struct SApp: Decodable, Identifiable {
         minOS = c.str("minOS"); size = c.num("size"); description = c.str("description"); notes = c.str("notes")
         developer = c.str("developer"); categoryId = c.str("categoryId")
         featured = c.bool("featured"); published = c.bool("published"); hasIcon = c.bool("hasIcon"); customIcon = c.bool("customIcon")
+        useIconWhenSigning = c.bool("useIconWhenSigning")
         iconVersion = c.num("iconVersion"); addedAt = c.str("addedAt"); updatedAt = c.str("updatedAt")
         previousVersion = c.str("previousVersion")
         installCount = c.int("installCount"); likes = c.int("likes"); dislikes = c.int("dislikes"); myVote = c.int("myVote")
@@ -155,7 +276,11 @@ struct SApp: Decodable, Identifiable {
         cloud = c.str("cloud"); sourceName = c.str("sourceName"); missing = c.bool("missing")
         versions = c.list("versions")
         remoteScreens = c.strings("remoteScreens")
+        screenshots = c.list("screenshots")
         tags = c.strings("tags")
+        extensions = c.int("extensions"); hasWatch = c.bool("hasWatch")
+        signDefaults = c.obj("signDefaults")
+        remoteUrl = c.str("remoteUrl")
     }
 
     var shownVersion: String { [versionOverride, version].compactMap { $0 }.first { !$0.isEmpty } ?? "" }
@@ -166,6 +291,10 @@ struct SApp: Decodable, Identifiable {
         !isNew && previousVersion != nil && (Date().timeIntervalSince(parseDate(updatedAt) ?? .distantPast)) < 3 * 86400
     }
     var sortDate: Date { parseDate(updatedAt) ?? parseDate(addedAt) ?? .distantPast }
+    var isSourceApp: Bool { cloud == "source" || cloud == "telegram" }
+    var votes: Int { (likes ?? 0) + (dislikes ?? 0) }
+    var score: Int { (likes ?? 0) - (dislikes ?? 0) }
+    var getLabel: String { hasUpdate ? "Update" : isStopped ? "Fix" : "Get" }
 }
 
 struct SCategory: Decodable, Identifiable {
@@ -183,11 +312,19 @@ struct SProfile: Decodable {
     var name: String?
     var type: String?
     var teamName: String?
+    var teamId: String?
+    var appId: String?
+    var wildcard: Bool?
     var expires: String?
     var deviceCount: Int?
+    var entitlements: [String]?
+    var entitlementValues: [String: JSONValue]?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
-        name = c.str("name"); type = c.str("type"); teamName = c.str("teamName"); expires = c.str("expires"); deviceCount = c.int("deviceCount")
+        name = c.str("name"); type = c.str("type"); teamName = c.str("teamName"); teamId = c.str("teamId")
+        appId = c.str("appId"); wildcard = c.bool("wildcard"); expires = c.str("expires"); deviceCount = c.int("deviceCount")
+        entitlements = c.strings("entitlements")
+        if case .object(let o)? = c.json("entitlementValues") { entitlementValues = o }
     }
 }
 
@@ -202,7 +339,12 @@ struct SP12: Decodable {
 
 struct SCheck: Decodable {
     var status: String?
-    init(from decoder: Decoder) throws { status = try keyed(decoder).str("status") }
+    var checkedAt: String?
+    var ocsp: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        status = c.str("status"); checkedAt = c.str("checkedAt"); ocsp = c.str("ocsp")
+    }
 }
 
 struct SCert: Decodable, Identifiable {
@@ -213,20 +355,44 @@ struct SCert: Decodable, Identifiable {
     var profile: SProfile?
     var check: SCheck?
     var deviceIncluded: Bool?
+    var matches: Bool?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         id = c.str("id") ?? UUID().uuidString; label = c.str("label") ?? "Certificate"; isDefault = c.bool("isDefault")
         p12 = c.obj("p12"); profile = c.obj("profile"); check = c.obj("check"); deviceIncluded = c.bool("deviceIncluded")
+        matches = c.bool("matches")
     }
 
     var expires: Date? { [parseDate(p12?.validTo), parseDate(profile?.expires)].compactMap { $0 }.min() }
     var daysLeft: Int? { expires.map { Calendar.current.dateComponents([.day], from: Date(), to: $0).day ?? 0 } }
+    var type: String { profile?.type ?? "" }
+    func allows(_ key: String) -> Bool {
+        if let vals = profile?.entitlementValues { return vals[key]?.allows ?? false }
+        return profile?.entitlements?.contains(key) ?? false
+    }
+}
+
+struct SSignedOptions: Decodable {
+    var entitlements: [String] = []
+    var plist: [String] = []
+    var dylibs: [String] = []
+    var tweaks: [String] = []
+    var tweakIds: [String] = []
+    var icon = false
+    var versionIndex = 0
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        entitlements = c.strings("entitlements") ?? []; plist = c.strings("plist") ?? []; dylibs = c.strings("dylibs") ?? []
+        tweaks = c.strings("tweaks") ?? []; tweakIds = c.strings("tweakIds") ?? []; icon = c.bool("icon") ?? false
+        versionIndex = c.int("versionIndex") ?? 0
+    }
 }
 
 struct SSigned: Decodable, Identifiable {
     var id: String
     var name: String
     var appId: String?
+    var certId: String?
     var bundleId: String?
     var version: String?
     var certLabel: String?
@@ -240,14 +406,17 @@ struct SSigned: Decodable, Identifiable {
     var onPhone: Bool?
     var installUrl: String?
     var shareUrl: String?
+    var downloadUrl: String?
+    var options: SSignedOptions?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "App"
-        appId = c.str("appId"); bundleId = c.str("bundleId"); version = c.str("version"); certLabel = c.str("certLabel")
+        appId = c.str("appId"); certId = c.str("certId"); bundleId = c.str("bundleId"); version = c.str("version"); certLabel = c.str("certLabel")
         size = c.num("size"); hasIcon = c.bool("hasIcon"); signedAt = c.str("signedAt") ?? c.str("createdAt"); expires = c.str("expires")
         token = c.str("token"); fileAvailable = c.bool("fileAvailable"); savedOnGithub = c.bool("savedOnGithub"); onPhone = c.bool("onPhone")
-        installUrl = c.str("installUrl"); shareUrl = c.str("shareUrl")
+        installUrl = c.str("installUrl"); shareUrl = c.str("shareUrl"); downloadUrl = c.str("downloadUrl"); options = c.obj("options")
     }
+    var daysLeft: Int? { parseDate(expires).map { Calendar.current.dateComponents([.day], from: Date(), to: $0).day ?? 0 } }
 }
 
 struct SAlert: Decodable, Identifiable {
@@ -258,29 +427,59 @@ struct SAlert: Decodable, Identifiable {
     var at: String?
     var read: Bool?
     var appId: String?
+    var requestId: String?
+    var userId: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         id = c.str("id") ?? UUID().uuidString; kind = c.str("kind"); title = c.str("title"); body = c.str("body")
-        at = c.str("at"); read = c.bool("read"); appId = c.str("appId")
+        at = c.str("at"); read = c.bool("read"); appId = c.str("appId"); requestId = c.str("requestId"); userId = c.str("userId")
     }
 }
 
 struct SSettings: Decodable {
     var signsPerDay: Int?
     var signsToday: Int?
+    var maxSignedPerUser: Int?
+    var signedRetentionDays: Int?
+    var signedOnGithub: Bool?
+    var zipLevel: Int?
+    var deleteAfterInstall: Bool?
+    var udidLogin: Bool?
+    var lastBackup: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
-        signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday")
+        signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday"); maxSignedPerUser = c.int("maxSignedPerUser")
+        signedRetentionDays = c.int("signedRetentionDays"); signedOnGithub = c.bool("signedOnGithub"); zipLevel = c.int("zipLevel")
+        deleteAfterInstall = c.bool("deleteAfterInstall"); udidLogin = c.bool("udidLogin"); lastBackup = c.str("lastBackup")
     }
+}
+
+struct SStorage: Decodable {
+    var library: Double?, signed: Double?, certs: Double?, temp: Double?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        library = c.num("library"); signed = c.num("signed"); certs = c.num("certs"); temp = c.num("temp")
+    }
+}
+
+struct SDisk: Decodable {
+    var total: Double?, free: Double?
+    init(from decoder: Decoder) throws { let c = try keyed(decoder); total = c.num("total"); free = c.num("free") }
 }
 
 struct SServerInfo: Decodable {
     var version: String?
     var https: Bool?
     var baseUrl: String?
+    var zsign: String?
+    var passwordSet: Bool?
+    var storage: Double?
+    var storageBreakdown: SStorage?
+    var disk: SDisk?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
-        version = c.str("version"); https = c.bool("https"); baseUrl = c.str("baseUrl")
+        version = c.str("version"); https = c.bool("https"); baseUrl = c.str("baseUrl"); zsign = c.str("zsign")
+        passwordSet = c.bool("passwordSet"); storage = c.num("storage"); storageBreakdown = c.obj("storageBreakdown"); disk = c.obj("disk")
     }
 }
 
@@ -289,6 +488,131 @@ struct SAnnouncement: Decodable {
     init(from decoder: Decoder) throws {
         if let s = try? decoder.singleValueContainer().decode(String.self) { text = s; return }
         text = try keyed(decoder).str("text")
+    }
+}
+
+struct STweakFile: Decodable { var name: String; var needsSubstrate: Bool
+    init(from decoder: Decoder) throws { let c = try keyed(decoder); name = c.str("name") ?? ""; needsSubstrate = c.bool("needsSubstrate") ?? false }
+}
+
+struct STweak: Decodable, Identifiable {
+    var id: String
+    var name: String
+    var version: String?
+    var description: String?
+    var warnings: [String]
+    var files: [STweakFile]
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "Tweak"; version = c.str("version"); description = c.str("description")
+        warnings = c.strings("warnings") ?? []; files = c.list("files") ?? []
+    }
+}
+
+struct SPreset: Decodable, Identifiable {
+    var id: String
+    var name: String
+    var options: SignDefaults
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "Preset"; options = c.obj("options") ?? SignDefaults()
+    }
+}
+
+struct SInstallLog: Decodable, Identifiable {
+    var id = UUID()
+    var appId: String?
+    var name: String
+    var version: String?
+    var shownVersion: String?
+    var certLabel: String?
+    var at: String?
+    var via: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        appId = c.str("appId"); name = c.str("name") ?? "App"; version = c.str("version"); shownVersion = c.str("shownVersion")
+        certLabel = c.str("certLabel"); at = c.str("at"); via = c.str("via")
+    }
+}
+
+struct SRequest: Decodable, Identifiable {
+    var id: String
+    var name: String
+    var username: String?
+    var link: String?
+    var note: String?
+    var status: String
+    var reply: String?
+    var appId: String?
+    var createdAt: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "App"; username = c.str("username"); link = c.str("link")
+        note = c.str("note"); status = c.str("status") ?? "pending"; reply = c.str("reply"); appId = c.str("appId"); createdAt = c.str("createdAt")
+    }
+}
+
+struct SInvite: Decodable, Identifiable {
+    var code: String
+    var note: String?
+    var maxUses: Int
+    var uses: Int
+    var usedBy: [String]
+    var expiresAt: String?
+    var id: String { code }
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        code = c.str("code") ?? ""; note = c.str("note"); maxUses = c.int("maxUses") ?? 1; uses = c.int("uses") ?? 0
+        usedBy = c.strings("usedBy") ?? []; expiresAt = c.str("expiresAt")
+    }
+    var expired: Bool { parseDate(expiresAt).map { $0 < Date() } ?? false }
+}
+
+struct SSignin: Decodable, Identifiable {
+    var id: String
+    var type: String
+    var user: String?
+    var ok: Bool
+    var ip: String?
+    var device: String?
+    var detail: String?
+    var at: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; type = c.str("type") ?? ""; user = c.str("user"); ok = c.bool("ok") ?? false
+        ip = c.str("ip"); device = c.str("device"); detail = c.str("detail"); at = c.str("at")
+    }
+}
+
+struct SUser: Decodable, Identifiable {
+    var id: String
+    var username: String
+    var udid: String?
+    var deviceName: String?
+    var createdAt: String?
+    var lastLogin: String?
+    var disabled: Bool
+    var invite: String?
+    var certCount: Int
+    var signedCount: Int
+    var signLimit: Int?
+    var signsToday: Int
+    var recentSignins: [SSignin]
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; username = c.str("username") ?? "?"; udid = c.str("udid"); deviceName = c.str("deviceName")
+        createdAt = c.str("createdAt"); lastLogin = c.str("lastLogin"); disabled = c.bool("disabled") ?? false; invite = c.str("invite")
+        certCount = c.int("certCount") ?? 0; signedCount = c.int("signedCount") ?? 0; signLimit = c.int("signLimit"); signsToday = c.int("signsToday") ?? 0
+        recentSignins = c.list("recentSignins") ?? []
+    }
+}
+
+struct SGithubInfo: Decodable {
+    var connected: Bool
+    var signedToGithub: Bool
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        connected = c.bool("connected") ?? false; signedToGithub = c.bool("signedToGithub") ?? false
     }
 }
 
@@ -303,6 +627,15 @@ struct ServerState: Decodable {
     var settings: SSettings?
     var server: SServerInfo?
     var announcement: SAnnouncement?
+    var tweaks: [STweak]
+    var presets: [SPreset]
+    var installs: [SInstallLog]
+    var requests: [SRequest]
+    var invites: [SInvite]
+    var users: [SUser]
+    var mySignins: [SSignin]
+    var securityLog: [SSignin]
+    var github: SGithubInfo?
     var skipped = 0
 
     init(from decoder: Decoder) throws {
@@ -319,6 +652,15 @@ struct ServerState: Decodable {
         settings = c.obj("settings")
         server = c.obj("server")
         announcement = c.obj("announcement")
+        tweaks = c.list("tweaks") ?? []
+        presets = c.list("presets") ?? []
+        installs = c.list("installs") ?? []
+        requests = c.list("requests") ?? []
+        invites = c.list("invites") ?? []
+        users = c.list("users") ?? []
+        mySignins = c.list("mySignins") ?? []
+        securityLog = c.list("securityLog") ?? []
+        github = c.obj("github")
     }
 }
 
@@ -586,13 +928,54 @@ final class Server: ObservableObject {
     }
 
     func category(_ id: String?) -> SCategory? { state?.categories?.first { $0.id == id } }
+    func categoryLabel(_ id: String?) -> String {
+        guard let c = category(id) else { return "Uncategorized" }
+        return [c.emoji ?? "", c.name].filter { !$0.isEmpty }.joined(separator: " ")
+    }
+    var certs: [SCert] { state?.certs ?? [] }
+    var defaultCert: SCert? { certs.first { $0.isDefault == true } ?? certs.first }
+    var https: Bool { state?.server?.https ?? (baseURL?.scheme == "https") }
+    var unreadAlerts: Int { (state?.alerts ?? []).filter { $0.read != true }.count }
+
+    func screenshotURLs(_ app: SApp) -> [URL] {
+        let local = (app.screenshots ?? []).compactMap { url("/api/apps/\(app.id)/screenshots/\($0.id)") }
+        return local.isEmpty ? (app.remoteScreens ?? []).compactMap { URL(string: $0) } : local
+    }
+
+    /// What "Get" signs with: the app's own default sign settings and your default certificate.
+    func signBodyFromDefaults(_ a: SApp, versionIndex: Int = 0) -> [String: Any] {
+        let d = a.signDefaults ?? SignDefaults()
+        let tweakIds = d.tweakIds.filter { tid in (state?.tweaks ?? []).contains { $0.id == tid } }
+        return [
+            "appId": a.id, "certId": defaultCert?.id ?? "", "minOS": d.minOS,
+            "entitlements": d.entitlements.map { $0.json }, "plist": d.plist.map { $0.json },
+            "removeExtensions": d.removeExtensions, "removeWatch": d.removeWatch ?? (a.hasWatch ?? false),
+            "removeUISD": d.removeUISD, "enableDocs": d.enableDocs, "weakDylibs": d.weakDylibs,
+            "injectExtensions": d.injectExtensions, "tweakIds": tweakIds, "versionIndex": versionIndex,
+        ]
+    }
+
+    /// A signed copy that can be installed again instead of signing the same app twice.
+    func reusableSigned(_ a: SApp) -> SSigned? {
+        guard let cert = defaultCert else { return nil }
+        let wanted = ((signBodyFromDefaults(a)["tweakIds"] as? [String]) ?? []).sorted()
+        let since = parseDate(a.updatedAt ?? a.addedAt) ?? .distantPast
+        return (state?.signed ?? []).first { s in
+            guard s.appId == a.id, s.fileAvailable == true, s.certId == cert.id, (parseDate(s.signedAt) ?? .distantPast) >= since else { return false }
+            let o = s.options
+            return (o?.dylibs ?? []).isEmpty && o?.icon != true && (o?.versionIndex ?? 0) == 0 && (o?.tweakIds ?? []).sorted() == wanted
+        }
+    }
     func isFavorite(_ app: SApp) -> Bool { state?.favorites?.contains(app.id) == true }
 
     /// Uploads a file in one go (certificates, small files). Returns the upload id the server gives back.
     func upload(_ fileURL: URL) async throws -> String {
         let scoped = fileURL.startAccessingSecurityScopedResource()
         defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
-        let body = try Data(contentsOf: fileURL)
+        return try await uploadData(try Data(contentsOf: fileURL))
+    }
+
+    func uploadData(_ body: Data) async throws -> String {
         let d = try await data("POST", "/api/upload", body: body, timeout: 300)
         guard let id = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["uploadId"] as? String else {
             throw MangoError("The upload didn't work. Try again.")
