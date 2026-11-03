@@ -75,7 +75,7 @@ struct UsersTab: View {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(inv.code).font(.system(size: 16, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.text)
-                                Text("\(inv.note?.isEmpty == false ? inv.note! : "No note") · \(inv.uses)/\(inv.maxUses) used\(inv.expiresAt != nil && !inv.expired ? " · expires \(shortDate(inv.expiresAt))" : "")")
+                                Text("\(inv.rank == "admin" ? "⭐ Admin · " : inv.rank == "tester" ? "🧪 Tester · " : "")\(inv.note?.isEmpty == false ? inv.note! : "No note") · \(inv.uses)/\(inv.maxUses) used\(inv.expiresAt != nil && !inv.expired ? " · expires \(shortDate(inv.expiresAt))" : "")")
                                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
                             }
                             Spacer()
@@ -124,6 +124,7 @@ struct NewInviteSheet: View {
     @State private var note = ""
     @State private var uses = 1
     @State private var days = 7
+    @State private var rank = ""
     @State private var made: (String, String?)?
 
     var body: some View {
@@ -135,10 +136,18 @@ struct NewInviteSheet: View {
                 Field(label: "Note") { TextField("Who it's for, e.g. Jake", text: $note).inputStyle() }
                 Field(label: "How many people can use it") { SelectBox(selection: $uses, options: [1, 2, 5, 10, 25, 100].map { ($0, $0 == 1 ? "1 person" : "\($0) people") }) }
                 Field(label: "Expires") { SelectBox(selection: $days, options: [(0, "Never"), (1, "In 1 day"), (7, "In 7 days"), (30, "In 30 days")]) }
+                if server.isOwner {
+                    Field(label: "Role for everyone who joins with it",
+                          hint: rank == "tester" ? "They join as testers right away: testers-only apps, beta versions, no sign limit and a 🧪 badge."
+                              : rank == "admin" ? "⚠️ They join as admins right away and can manage the library and users. Only use this for people you trust, and keep uses low."
+                              : "They join as a regular member.") {
+                        SelectBox(selection: $rank, options: [("", "Member"), ("tester", "🧪 Tester"), ("admin", "⭐ Admin")])
+                    }
+                }
                 WebButton(title: "Create Invite", kind: .primary, big: true) {
                     Task {
                         do {
-                            let r = try await server.post("/api/invites", ["note": note, "maxUses": uses, "expiresDays": days])
+                            let r = try await server.post("/api/invites", ["note": note, "maxUses": uses, "expiresDays": days, "rank": rank])
                             await server.refresh()
                             if let code = (r["invite"] as? [String: Any])?["code"] as? String { made = (code, r["signupUrl"] as? String) }
                         } catch { router.say(error.localizedDescription) }
@@ -164,6 +173,10 @@ struct InviteSheet: View {
             Text(code).font(.system(size: 30, weight: .bold, design: .monospaced)).foregroundStyle(Theme.mango).tracking(2)
                 .frame(maxWidth: .infinity).padding(.vertical, 20).background(Theme.bg2).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .textSelection(.enabled)
+            if let r = inv?.rank, !r.isEmpty {
+                Badge(text: r == "admin" ? "Joins as ⭐ Admin" : "Joins as 🧪 Tester", style: r == "admin" ? .warn : .blue)
+                    .frame(maxWidth: .infinity).padding(.top, 10)
+            }
             if let inv {
                 Text("\(inv.uses)/\(inv.maxUses) used\(inv.usedBy.isEmpty ? "" : " · " + inv.usedBy.joined(separator: ", "))").font(.footnote).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 8)
             }

@@ -587,11 +587,13 @@ struct SInvite: Decodable, Identifiable {
     var uses: Int
     var usedBy: [String]
     var expiresAt: String?
+    /// The role everyone who joins with it gets ("tester" or "admin"), if any.
+    var rank: String?
     var id: String { code }
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         code = c.str("code") ?? ""; note = c.str("note"); maxUses = c.int("maxUses") ?? 1; uses = c.int("uses") ?? 0
-        usedBy = c.strings("usedBy") ?? []; expiresAt = c.str("expiresAt")
+        usedBy = c.strings("usedBy") ?? []; expiresAt = c.str("expiresAt"); rank = c.str("rank")
     }
     var expired: Bool { parseDate(expiresAt).map { $0 < Date() } ?? false }
 }
