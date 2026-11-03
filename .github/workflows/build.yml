@@ -38,6 +38,7 @@ jobs:
             -derivedDataPath build \
             -clonedSourcePackagesDirPath SourcePackages \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="0.1.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             build 2>&1 | tee build.log | grep -E "error:|warning: .*MangoSigner/App|\*\* BUILD" || true
           test -d build/Build/Products/Release-iphoneos/MangoSigner.app
 
@@ -61,7 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(grep MARKETING_VERSION project.yml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          VERSION="0.1.${{ github.run_number }}"
           TAG="build-${{ github.run_number }}"
           gh release create "$TAG" MangoSigner.ipa --prerelease \
             --title "Mango Signer ${VERSION} (build ${{ github.run_number }})" \
