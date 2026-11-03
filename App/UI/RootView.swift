@@ -27,6 +27,13 @@ struct RootView: View {
     @EnvironmentObject var router: Router
     @Environment(\.scenePhase) private var phase
 
+    /// Changes whenever the signed-in account or its certificates change.
+    var certSyncKey: String {
+        guard server.authed, let st = server.state else { return "signed-out" }
+        let certs: [String] = (st.certs ?? []).map { c in c.id + "|" + c.label }
+        return st.account.id + ":" + certs.joined(separator: ",")
+    }
+
     var body: some View {
         Group {
             if server.checking && server.state == nil && server.baseURL != nil {
@@ -45,7 +52,7 @@ struct RootView: View {
         }
         .task { await server.checkSession() }
         // Keeps this iPhone's copies of your account's certificates in step (added, renamed, deleted, or another account).
-        .task(id: (server.authed ? server.state?.account.id ?? "" : "") + ":" + (server.state?.certs ?? []).map { $0.id + $0.label }.joined(separator: ",")) {
+        .task(id: certSyncKey) {
             guard server.state != nil || !server.authed else { return }
             await local.syncAccountCerts(server: server)
         }
