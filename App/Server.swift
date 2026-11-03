@@ -1257,6 +1257,9 @@ final class ImageCache: @unchecked Sendable {
     private let cache: NSCache<NSURL, UIImage> = { let c = NSCache<NSURL, UIImage>(); c.countLimit = 600; return c }()
     @MainActor private var inFlight: [URL: Task<UIImage?, Never>] = [:]
 
+    /// Forgets every picture kept in memory (they download again when shown).
+    func clear() { cache.removeAllObjects() }
+
     /// Already downloaded (NSCache is safe to read from anywhere).
     func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
 

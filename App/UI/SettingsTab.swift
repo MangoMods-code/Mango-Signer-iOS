@@ -14,6 +14,10 @@ struct SettingsTab: View {
         VStack(alignment: .leading, spacing: 0) {
             if server.isOwner { ownerSections } else if server.isAdmin { adminSections }
             accountSection
+            if !server.isOwner {
+                SectionTitle(text: "This iPhone's storage")
+                DeviceStorageCard()
+            }
             phoneSection
             Text("🥭 Mango Signer \(info?.version ?? "")\(server.isOwner ? " · signing powered by zsign (MIT)" : "")\n© 2026 MangoMods · All rights reserved")
                 .font(.caption).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.top, 26)
@@ -50,8 +54,11 @@ struct SettingsTab: View {
             ValueRow(title: "Version", value: info?.version ?? "")
         }
 
-        SectionTitle(text: "Storage")
+        SectionTitle(text: "Server storage")
         storageCard
+
+        SectionTitle(text: "This iPhone's storage")
+        DeviceStorageCard()
 
         SectionTitle(text: "Cloud Library")
         ListBox {
