@@ -384,7 +384,11 @@ struct AppRowView: View {
                 Text("\(a.shownVersion.isEmpty ? "—" : a.shownVersion) · \(desc.isEmpty ? (a.bundleId ?? "") : desc)")
                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
                 if !sub2.isEmpty { Text(sub2).font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1) }
-                if !badges.isEmpty { BadgeFlow(badges: badges).padding(.top, 4) }
+                if !badges.isEmpty {
+                    // One line of badges (cheaper to lay out than a wrapping row while scrolling).
+                    HStack(spacing: 5) { ForEach(Array(badges.prefix(4).enumerated()), id: \.offset) { $0.element } }
+                        .padding(.top, 4)
+                }
             }
             Spacer(minLength: 4)
             PillButton(title: a.getLabel) { router.quickGet(a, server: server) }

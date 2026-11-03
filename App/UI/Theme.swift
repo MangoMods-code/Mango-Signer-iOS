@@ -568,6 +568,11 @@ struct WebIcon: View {
     var size: CGFloat = 54
     @State private var image: UIImage?
     var radius: CGFloat { size >= 70 ? size * 0.237 : size * 0.24 }
+    init(url: URL?, name: String, size: CGFloat = 54) {
+        self.url = url; self.name = name; self.size = size
+        // Already downloaded: show it straight away (no flash while scrolling back).
+        _image = State(initialValue: url.flatMap { ImageCache.shared.cached($0) })
+    }
     var body: some View {
         ZStack {
             if let image {
@@ -582,7 +587,8 @@ struct WebIcon: View {
         .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Theme.line))
         .task(id: url) {
             guard let url else { image = nil; return }
-            image = await ImageCache.shared.image(url)
+            if image != nil { return }
+            image = await ImageCache.shared.image(url, maxPixels: size * 3)
         }
     }
 }

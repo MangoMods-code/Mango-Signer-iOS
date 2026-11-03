@@ -131,7 +131,7 @@ struct TabPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if let e = server.loadError {
                     WarningBox(text: e, bad: true)
                 }

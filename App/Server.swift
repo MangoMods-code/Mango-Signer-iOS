@@ -1102,19 +1102,26 @@ final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
 
 // MARK: - Images from the server (with the login cookie), cached in memory
 
-@MainActor
-final class ImageCache {
+/// Icons are downloaded, decoded and shrunk off the main thread, so scrolling never waits on them.
+final class ImageCache: @unchecked Sendable {
     static let shared = ImageCache()
-    private let cache = NSCache<NSURL, UIImage>()
-    private var inFlight: [URL: Task<UIImage?, Never>] = [:]
+    private let cache: NSCache<NSURL, UIImage> = { let c = NSCache<NSURL, UIImage>(); c.countLimit = 600; return c }()
+    @MainActor private var inFlight: [URL: Task<UIImage?, Never>] = [:]
 
-    func image(_ url: URL) async -> UIImage? {
+    /// Already downloaded (NSCache is safe to read from anywhere).
+    func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
+
+    @MainActor
+    func image(_ url: URL, maxPixels: CGFloat = 0) async -> UIImage? {
         if let img = cache.object(forKey: url as NSURL) { return img }
         if let t = inFlight[url] { return await t.value }
-        let t = Task<UIImage?, Never> {
+        let t = Task.detached(priority: .utility) { () -> UIImage? in
             guard let (d, r) = try? await URLSession.shared.data(from: url),
                   ((r as? HTTPURLResponse)?.statusCode ?? 0) == 200, let img = UIImage(data: d) else { return nil }
-            return img
+            if maxPixels > 0, max(img.size.width, img.size.height) * img.scale > maxPixels {
+                return await img.byPreparingThumbnail(ofSize: CGSize(width: maxPixels, height: maxPixels)) ?? img.preparingForDisplay() ?? img
+            }
+            return await img.byPreparingForDisplay() ?? img
         }
         inFlight[url] = t
         let img = await t.value
