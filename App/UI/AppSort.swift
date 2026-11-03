@@ -95,9 +95,11 @@ struct QuickSortSheet: View {
     @State private var newCatEmoji = "📁"
     /// Categories set here, so the screen is right before the library refreshes.
     @State private var placed: [String: String] = [:]
+    @State private var gone: Set<String> = []
+    @State private var confirmDelete: SApp?
 
     var cats: [SCategory] { server.state?.categories ?? [] }
-    var current: SApp? { i < queue.count ? server.app(queue[i]) : nil }
+    var current: SApp? { i < queue.count && !gone.contains(queue[i]) ? server.app(queue[i]) : nil }
 
     var body: some View {
         SheetScroll {
@@ -107,7 +109,7 @@ struct QuickSortSheet: View {
                 appCard(a)
             } else {
                 WebEmpty(icon: "checkmark.circle", title: queue.isEmpty ? "Every app has a category 🎉" : "All done",
-                         text: queue.isEmpty ? "Nothing left to sort." : "\(done) sorted\(queue.count - done > 0 ? ", \(queue.count - done) skipped" : "").")
+                         text: queue.isEmpty ? "Nothing left to sort." : "\(done) sorted\(gone.isEmpty ? "" : ", \(gone.count) deleted")\(queue.count - done - gone.count > 0 ? ", \(queue.count - done - gone.count) skipped" : "").")
                 if !history.isEmpty { WebButton(title: "↩ Undo the last one") { undo() }.padding(.top, 10) }
                 WebButton(title: "Close", kind: .primary) { finish() }.padding(.top, 8)
             }
@@ -119,6 +121,11 @@ struct QuickSortSheet: View {
                 for (id, v) in g { guesses[id] = Guess(categoryId: v["categoryId"] as? String, newCategory: v["newCategory"] as? String, why: v["why"] as? String ?? "") }
             }
             loaded = true
+        }
+        .confirmationDialog("Delete \(confirmDelete?.name ?? "this app") from the library?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let a = confirmDelete { delete(a) } }
+        } message: {
+            Text("People who installed it keep it.\(confirmDelete?.isSourceApp == true ? " \(confirmDelete?.sourceName ?? "Its source") won't add it back." : "") This can't be undone.")
         }
         .alert("New category", isPresented: $newCat) {
             TextField("Name, e.g. Emulators", text: $newCatName)
@@ -135,7 +142,7 @@ struct QuickSortSheet: View {
         let sub = [a.developer ?? "", a.bundleId ?? "", a.sourceName.map { "\(a.cloud == "telegram" ? "✈️" : "☁") \($0)" } ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
         let about = (a.description?.isEmpty == false ? a.description! : a.notes ?? "").replacingOccurrences(of: "\n", with: " ")
 
-        Text("\(i + 1) of \(queue.count) · \(done) sorted").font(.footnote).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.bottom, 10)
+        Text("\(i + 1) of \(queue.count) · \(done) sorted\(gone.isEmpty ? "" : " · \(gone.count) deleted")").font(.footnote).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.bottom, 10)
         SheetHead(title: a.name, sub: sub) { AppIconImage(app: a, size: 76) }
         if !about.isEmpty {
             Text(about.count > 160 ? String(about.prefix(160)) + "…" : about).font(.footnote).foregroundStyle(Theme.muted).padding(.bottom, 12)
@@ -154,6 +161,7 @@ struct QuickSortSheet: View {
         .padding(.top, 10)
         .disabled(busy)
         WebButton(title: "Skip for now") { i += 1; skipGone() }.padding(.top, 12)
+        WebButton(title: "🗑 Delete from library", kind: .danger, disabled: busy) { confirmDelete = a }.padding(.top, 8)
         if !history.isEmpty { LinkButton(title: "↩ Undo the last one") { undo() } }
         LinkButton(title: "Open the app's page") { finish(open: a.id) }
         LinkButton(title: "Done") { finish() }
@@ -181,7 +189,20 @@ struct QuickSortSheet: View {
     }
 
     /// Steps past apps that were deleted while sorting.
-    func skipGone() { while i < queue.count && server.app(queue[i]) == nil { i += 1 } }
+    func skipGone() { while i < queue.count && (gone.contains(queue[i]) || server.app(queue[i]) == nil) { i += 1 } }
+
+    func delete(_ a: SApp) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await server.data("DELETE", "/api/apps/\(a.id)")
+                gone.insert(a.id)
+                history.removeAll { $0 == a.id }
+                i += 1; skipGone()
+            } catch { router.say(error.localizedDescription) }
+        }
+    }
 
     func put(_ a: SApp, _ cid: String) {
         busy = true

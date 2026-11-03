@@ -1019,13 +1019,19 @@ final class Server: ObservableObject {
         authed = false
     }
 
+    /// Counts refreshes, so an older one that finishes late can't put old data back on screen.
+    private var refreshGen = 0
+
     @discardableResult
     func refresh() async -> String? {
+        refreshGen += 1
+        let gen = refreshGen
         do {
             let d = try await data("GET", "/api/state")
             do {
                 // Reading a big library takes a moment; do it off the main thread so the app never freezes.
                 let decoded = try await Task.detached(priority: .userInitiated) { try JSONDecoder().decode(ServerState.self, from: d) }.value
+                guard gen == refreshGen else { return loadError }
                 state = decoded
                 loadError = nil
             } catch {
