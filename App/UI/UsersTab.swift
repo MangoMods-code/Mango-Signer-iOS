@@ -138,7 +138,7 @@ struct NewInviteSheet: View {
                 Field(label: "Expires") { SelectBox(selection: $days, options: [(0, "Never"), (1, "In 1 day"), (7, "In 7 days"), (30, "In 30 days")]) }
                 if server.isOwner {
                     Field(label: "Role for everyone who joins with it",
-                          hint: rank == "tester" ? "They join as testers right away: testers-only apps, beta versions, no sign limit and a 🧪 badge."
+                          hint: rank == "tester" ? "They join as testers right away: a 🧪 badge and the apps you mark for testers. Nothing else changes for them."
                               : rank == "admin" ? "⚠️ They join as admins right away and can manage the library and users. Only use this for people you trust, and keep uses low."
                               : "They join as a regular member.") {
                         SelectBox(selection: $rank, options: [("", "Member"), ("tester", "🧪 Tester"), ("admin", "⭐ Admin")])
@@ -223,7 +223,7 @@ struct UserSheet: View {
                 let locked = u.rank == "admin" && !server.isOwner
                 if server.isOwner {
                     ListBox(fill: Theme.bg2) {
-                        PickerRow(title: "Role", sub: "Admins help run the library and users. Testers see apps for testers and beta versions first.",
+                        PickerRow(title: "Role", sub: "Admins help run the library and users. Testers get a 🧪 badge and see the apps you mark for testers.",
                                   selection: Binding(get: { u.rank ?? "" }, set: { v in setRank(u, v) }),
                                   options: [("", "Member"), ("tester", "🧪 Tester"), ("admin", "⭐ Admin")])
                     }

@@ -243,7 +243,7 @@ struct SettingsTab: View {
 
         if server.isTester {
             SectionTitle(text: "🧪 Tester")
-            Hint(text: "You see apps marked for testers, beta versions first, and you have no daily sign limit. Found something broken? Tell the owner.").padding(.bottom, 10)
+            Hint(text: "You get the 🧪 badge and see the apps the owner picks for testers. Found something broken? Report it here.").padding(.bottom, 10)
             let bugs = server.state?.bugs ?? []
             if !bugs.isEmpty {
                 ListBox {
