@@ -58,6 +58,8 @@ enum Route: Identifiable, Equatable {
     case appCollections(String)
     case appFile(String, newVersion: Bool)
     case moveToGithub(String)
+    case autoSort
+    case quickSort
 
     var id: String {
         switch self {
@@ -94,6 +96,8 @@ enum Route: Identifiable, Equatable {
         case .appCollections(let a): return "appCollections-\(a)"
         case .appFile(let a, let v): return "appFile-\(a)-\(v)"
         case .moveToGithub(let a): return "moveToGithub-\(a)"
+        case .autoSort: return "autoSort"
+        case .quickSort: return "quickSort"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -203,6 +207,8 @@ struct SheetHost: View {
             case .appCollections(let id): AppCollectionsSheet(appId: id)
             case .appFile(let id, let v): AppFileSheet(appId: id, newVersion: v)
             case .moveToGithub(let id): MoveToGithubSheet(appId: id)
+            case .autoSort: AutoSortSheet()
+            case .quickSort: QuickSortSheet()
             case nil: Theme.card.ignoresSafeArea()
             }
         }

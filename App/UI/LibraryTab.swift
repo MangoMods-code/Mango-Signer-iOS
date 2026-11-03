@@ -135,6 +135,19 @@ struct LibraryTab: View {
                 chips(cat)
                 tools
             }
+            let n = server.isStaff && ["all", "none"].contains(cat) ? Lib.count("none", server) : 0
+            if n > 0 {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("📂 \(n) app\(n == 1 ? " has" : "s have") no category").font(.system(size: 14)).foregroundStyle(Theme.soft)
+                    HStack(spacing: 8) {
+                        smallButton("✨ Auto-sort") { router.open(.autoSort) }
+                        smallButton("Sort by hand") { router.open(.quickSort) }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.vertical, 6)
+            }
             if ["installed", "updates"].contains(cat) && Lib.count("installed", server) > 0 {
                 hintCard("Deleted something or updated it elsewhere?", button: "Fix the list") { router.open(.myApps) }
             }
@@ -247,6 +260,14 @@ struct LibraryTab: View {
                 .background(on ? Theme.mango : .clear).clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.text)
+                .frame(maxWidth: .infinity).padding(.vertical, 9).background(Theme.card2).clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(PressStyle())
     }
 
     func hintCard(_ text: String, button: String, action: @escaping () -> Void) -> some View {
