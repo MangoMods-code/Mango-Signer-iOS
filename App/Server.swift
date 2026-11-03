@@ -242,6 +242,7 @@ struct SApp: Decodable, Identifiable {
     var hasIcon: Bool?
     var customIcon: Bool?
     var useIconWhenSigning: Bool?
+    var useVersionWhenSigning: Bool?
     var iconVersion: Double?
     var addedAt: String?
     var updatedAt: String?
@@ -276,6 +277,7 @@ struct SApp: Decodable, Identifiable {
         developer = c.str("developer"); categoryId = c.str("categoryId")
         featured = c.bool("featured"); published = c.bool("published"); hasIcon = c.bool("hasIcon"); customIcon = c.bool("customIcon")
         useIconWhenSigning = c.bool("useIconWhenSigning")
+        useVersionWhenSigning = c.bool("useVersionWhenSigning")
         iconVersion = c.num("iconVersion"); addedAt = c.str("addedAt"); updatedAt = c.str("updatedAt")
         previousVersion = c.str("previousVersion")
         installCount = c.int("installCount"); likes = c.int("likes"); dislikes = c.int("dislikes"); myVote = c.int("myVote")
@@ -306,6 +308,18 @@ struct SApp: Decodable, Identifiable {
     var votes: Int { (likes ?? 0) + (dislikes ?? 0) }
     var score: Int { (likes ?? 0) - (dislikes ?? 0) }
     var getLabel: String { hasUpdate ? "Update" : isStopped ? "Fix" : "Get" }
+}
+
+/// A hand-picked list of apps shown in the library (owner and admins make these).
+struct SCollection: Decodable, Identifiable {
+    var id: String
+    var name: String
+    var emoji: String?
+    var appIds: [String]
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? ""; emoji = c.str("emoji"); appIds = c.strings("appIds") ?? []
+    }
 }
 
 struct SCategory: Decodable, Identifiable {
@@ -642,9 +656,11 @@ struct SUser: Decodable, Identifiable {
 struct SGithubInfo: Decodable {
     var connected: Bool
     var signedToGithub: Bool
+    var storeUploads: Bool
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         connected = c.bool("connected") ?? false; signedToGithub = c.bool("signedToGithub") ?? false
+        storeUploads = c.bool("storeUploads") ?? false
     }
 }
 
@@ -652,6 +668,7 @@ struct ServerState: Decodable {
     var account: Account
     var apps: [SApp]
     var categories: [SCategory]?
+    var collections: [SCollection]
     var certs: [SCert]?
     var signed: [SSigned]?
     var favorites: [String]?
@@ -678,6 +695,7 @@ struct ServerState: Decodable {
         apps = rawApps.compactMap { $0.value }
         skipped = rawApps.count - apps.count
         categories = c.list("categories")
+        collections = c.list("collections") ?? []
         certs = c.list("certs")
         signed = c.list("signed")
         favorites = c.strings("favorites")
@@ -1093,6 +1111,93 @@ final class Server: ObservableObject {
         let scoped = fileURL.startAccessingSecurityScopedResource()
         defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
         return try await uploadData(try Data(contentsOf: fileURL))
+    }
+
+    /// Uploads a big file (an .ipa) in 8 MB pieces, a few at a time, retrying pieces if the connection drops —
+    /// the same way the website does. Small files go up in one go. Returns the upload id.
+    func uploadLarge(_ fileURL: URL, progress: @escaping @MainActor (Double, String) -> Void) async throws -> String {
+        let scoped = fileURL.startAccessingSecurityScopedResource()
+        defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
+        let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
+        guard size > 0 else { throw MangoError("That file is empty.") }
+        let chunk: Int64 = 8 * 1024 * 1024
+        if size <= chunk {
+            progress(0, "Uploading…")
+            let id = try await uploadData(try Data(contentsOf: fileURL))
+            progress(1, "Uploaded")
+            return id
+        }
+        let start = try await post("/api/upload/start", ["size": size, "chunkSize": chunk])
+        guard let uid = start["uploadId"] as? String else { throw MangoError("The server didn't start the upload. Try again.") }
+        let piece = (start["chunkSize"] as? NSNumber)?.int64Value ?? chunk
+        let count = (start["count"] as? NSNumber)?.intValue ?? Int((size + piece - 1) / piece)
+        let began = Date()
+        final class Tally: @unchecked Sendable { var sent: Int64 = 0; var next = 0; let lock = NSLock() }
+        let tally = Tally()
+        func take() -> Int? { tally.lock.lock(); defer { tally.lock.unlock() }; guard tally.next < count else { return nil }; tally.next += 1; return tally.next - 1 }
+        func sendPiece(_ i: Int) async throws {
+            let offset = Int64(i) * piece
+            let length = Int(min(piece, size - offset))
+            let body: Data = try await Task.detached(priority: .userInitiated) {
+                let handle = try FileHandle(forReadingFrom: fileURL)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: UInt64(offset))
+                guard let d = try handle.read(upToCount: length), d.count == length else { throw MangoError("Couldn't read the file. Pick it again.") }
+                return d
+            }.value
+            var failures = 0
+            while true {
+                do {
+                    _ = try await data("PUT", "/api/upload/\(uid)?index=\(i)", body: body, timeout: 300)
+                    break
+                } catch {
+                    if (error as? MangoError)?.message.contains("expired") == true { throw error }
+                    failures += 1
+                    if failures > 8 { throw MangoError("The upload keeps failing. Check your connection and try again.") }
+                    let wait = min(15.0, 0.8 * Double(failures))
+                    progress(Double(tally.sent) / Double(size), "Connection dropped — retrying (\(failures))…")
+                    try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                }
+            }
+            tally.lock.lock(); tally.sent += Int64(length); let sent = tally.sent; tally.lock.unlock()
+            let rate = Double(sent) / max(1, Date().timeIntervalSince(began))
+            progress(Double(sent) / Double(size), "\(formatBytes(Double(sent))) of \(formatBytes(Double(size))) · \(formatBytes(rate))/s")
+        }
+        progress(0, "Uploading…")
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<min(3, count) {
+                group.addTask { @MainActor in while let i = take() { try await sendPiece(i) } }
+            }
+            try await group.waitForAll()
+        }
+        return uid
+    }
+
+    /// Waits for a server job (adding or updating an app) and returns its result. Reports the progress and last log line.
+    func waitJob(_ id: String, update: @escaping @MainActor (Double?, String) -> Void) async throws -> [String: Any] {
+        var misses = 0
+        while true {
+            try await Task.sleep(nanoseconds: 900_000_000)
+            try Task.checkCancellation()
+            let j: [String: Any]
+            do {
+                j = (try JSONSerialization.jsonObject(with: try await data("GET", "/api/jobs/\(id)")) as? [String: Any]) ?? [:]
+                misses = 0
+            } catch {
+                misses += 1
+                if misses > 60 { throw error }
+                try await Task.sleep(nanoseconds: UInt64(min(10, misses)) * 1_000_000_000)
+                continue
+            }
+            let status = j["status"] as? String ?? "running"
+            let last = (j["log"] as? [String])?.last ?? (j["last"] as? String) ?? "Working…"
+            update((j["progress"] as? NSNumber)?.doubleValue, last)
+            switch status {
+            case "done": return j["result"] as? [String: Any] ?? [:]
+            case "error", "cancelled": throw MangoError(j["error"] as? String ?? "That didn't work.")
+            default: continue
+            }
+        }
     }
 
     func uploadData(_ body: Data) async throws -> String {

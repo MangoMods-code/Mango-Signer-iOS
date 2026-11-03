@@ -8,6 +8,7 @@ struct AppSheet: View {
     @State private var shot: Int?
     @State private var openNotes: Set<Int> = []
     @State private var confirmDelete = false
+    @State private var confirmMove = false
 
     var app: SApp? { server.app(appId) }
 
@@ -17,6 +18,9 @@ struct AppSheet: View {
                 .fullScreenCover(item: Binding(get: { shot.map { ShotPick(index: $0) } }, set: { shot = $0?.index })) { p in
                     ShotViewer(urls: server.screenshotURLs(a), start: p.index)
                 }
+                .confirmationDialog("Move \(a.name) to your GitHub storage?", isPresented: $confirmMove, titleVisibility: .visible) {
+                    Button("Move to GitHub") { router.open(.moveToGithub(a.id)) }
+                } message: { Text("It frees \(formatBytes(a.size)) on your server. Signing works the same.") }
                 .confirmationDialog("Delete \(a.name) from the library?", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) { delete(a) }
                 } message: {
@@ -264,9 +268,20 @@ struct AppSheet: View {
         }
         .padding(.top, 14)
         VStack(spacing: 10) {
-            WebButton(title: "Edit details, screenshots & more on the website") { if let u = server.baseURL { UIApplication.shared.open(u) } }
+            WebButton(title: "Edit details, tags & sign settings") { router.open(.editApp(a.id)) }
+            WebButton(title: "Screenshots (\((a.screenshots ?? []).count))") { router.open(.appShots(a.id)) }
+            WebButton(title: "Add to collection") { router.open(.appCollections(a.id)) }
+            if a.cloud == "source" {
+                WebButton(title: "⬆ Add a newer version") { router.open(.appFile(a.id, newVersion: true)) }
+                Hint(text: "For when you have a newer build than \(a.sourceName ?? "the source"). Its older versions stay available.", center: true).padding(.top, -6)
+            }
             if a.isSourceApp {
                 Hint(text: "Updates come in by themselves when \(a.sourceName ?? "the source") \(a.cloud == "telegram" ? "posts" : "adds") a new version.", center: true)
+            } else {
+                WebButton(title: "Update IPA (new version)") { router.open(.appFile(a.id, newVersion: false)) }
+            }
+            if a.cloud == nil && server.isOwner && server.state?.github?.connected == true {
+                WebButton(title: "☁ Move to GitHub (frees \(formatBytes(a.size)))") { confirmMove = true }
             }
             WebButton(title: "Delete", kind: .danger) { confirmDelete = true }
         }

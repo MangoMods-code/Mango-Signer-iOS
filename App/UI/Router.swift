@@ -53,6 +53,11 @@ enum Route: Identifiable, Equatable {
     case deviceApps
     case reportBug(String?)
     case bug(String)
+    case editApp(String)
+    case appShots(String)
+    case appCollections(String)
+    case appFile(String, newVersion: Bool)
+    case moveToGithub(String)
 
     var id: String {
         switch self {
@@ -84,6 +89,11 @@ enum Route: Identifiable, Equatable {
         case .deviceApps: return "deviceApps"
         case .reportBug(let a): return "reportBug-\(a ?? "")"
         case .bug(let b): return "bug-\(b)"
+        case .editApp(let a): return "editApp-\(a)"
+        case .appShots(let a): return "appShots-\(a)"
+        case .appCollections(let a): return "appCollections-\(a)"
+        case .appFile(let a, let v): return "appFile-\(a)-\(v)"
+        case .moveToGithub(let a): return "moveToGithub-\(a)"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -188,6 +198,11 @@ struct SheetHost: View {
             case .deviceApps: DeviceAppsSheet()
             case .reportBug(let a): ReportBugSheet(appId: a)
             case .bug(let id): BugSheet(bugId: id)
+            case .editApp(let id): EditAppSheet(appId: id)
+            case .appShots(let id): AppShotsSheet(appId: id)
+            case .appCollections(let id): AppCollectionsSheet(appId: id)
+            case .appFile(let id, let v): AppFileSheet(appId: id, newVersion: v)
+            case .moveToGithub(let id): MoveToGithubSheet(appId: id)
             case nil: Theme.card.ignoresSafeArea()
             }
         }
