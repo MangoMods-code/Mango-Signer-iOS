@@ -507,6 +507,7 @@ struct SigningSheet: View {
                 router.signedCache[s.id] = s
                 router.locked = false
                 await server.refresh()
+                if LocalStore.keepCopies { let l = local, srv = server; Task { try? await l.saveCopy(s, server: srv) } }
                 let jit = ((run.body["entitlements"] as? [[String: Any]]) ?? []).contains { ($0["key"] as? String) == "get-task-allow" }
                 router.open(.ready(s.id, jit: jit))
                 return

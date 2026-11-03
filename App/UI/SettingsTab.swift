@@ -5,6 +5,7 @@ struct SettingsTab: View {
     @EnvironmentObject var local: LocalStore
     @EnvironmentObject var router: Router
     @State private var confirmLogout = false
+    @AppStorage("keepSignedCopies") private var keepCopies = true
 
     var settings: SSettings? { server.state?.settings }
     var info: SServerInfo? { server.state?.server }
@@ -236,6 +237,14 @@ struct SettingsTab: View {
     var phoneSection: some View {
         SectionTitle(text: "This app")
         ListBox {
+            ToggleRow(title: "Save signed apps on this iPhone", sub: "Like ESign: everything you sign is kept here too, so it can always be installed again or shared",
+                      isOn: Binding(get: { keepCopies }, set: { v in
+                          keepCopies = v
+                          if v { Task { await local.saveMissingCopies(server: server) } }
+                      }))
+            RowLine()
+            ValueRow(title: "What's installed", value: DeviceApps.available ? "Checked on this iPhone" : "iOS won't say")
+            RowLine()
             LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             RowLine()
             LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.certs.count)") { router.open(.localCerts) }

@@ -876,6 +876,59 @@ final class Server: ObservableObject {
         }
     }
 
+    /// Puts a signed app's file back on the server from the copy on this iPhone, so it can be installed again.
+    func restoreSigned(_ s: SSigned, from copy: SignedApp) async throws -> SSigned? {
+        let id = try await upload(copy.url)
+        struct R: Decodable { var signed: SSigned }
+        let d = try await data("POST", "/api/signed/\(s.id)/restore", json: ["uploadId": id], timeout: 300)
+        await refresh()
+        return (try? JSONDecoder().decode(R.self, from: d))?.signed
+    }
+
+    // MARK: what's really on this iPhone
+
+    /// Bumped after checking the iPhone, so screens showing "Installed" redraw.
+    @Published var deviceCheck = 0
+    private var lastDeviceSync = Date.distantPast
+
+    /// The bundle IDs a library app could be installed under (its own, or whatever you signed it as).
+    func bundleIds(for a: SApp) -> [String] {
+        var ids = (state?.signed ?? []).filter { $0.appId == a.id }.compactMap { $0.bundleId }
+        if let b = a.bundleId { ids.append(b) }
+        var seen = Set<String>()
+        return ids.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    /// The installed version of a library app on this iPhone, "" if it's installed but iOS gives no version,
+    /// or nil if it isn't installed (or iOS can't tell).
+    func installedVersion(_ a: SApp) -> String? {
+        for id in bundleIds(for: a) where DeviceApps.isInstalled(id) == true { return DeviceApps.version(id) ?? "" }
+        return nil
+    }
+
+    /// Keeps "your installed apps" true to the iPhone: apps you deleted drop off, and apps you already updated
+    /// stop asking to be updated. Only runs when iOS really answers.
+    func syncWithDevice(force: Bool = false) async {
+        guard DeviceApps.available, let st = state else { return }
+        guard force || Date().timeIntervalSince(lastDeviceSync) > 20 else { return }
+        lastDeviceSync = Date()
+        var changed = false
+        for a in st.apps where a.installed != nil {
+            let ids = bundleIds(for: a)
+            guard !ids.isEmpty else { continue }
+            let here = ids.filter { DeviceApps.isInstalled($0) == true }
+            if here.isEmpty {
+                if (try? await post("/api/my-apps/\(a.id)", ["action": "remove"])) != nil { changed = true }
+            } else if a.hasUpdate {
+                let newest = here.compactMap { DeviceApps.version($0) }.max { versionCompare($0, $1) < 0 }
+                if let v = newest, versionCompare(v, a.shownVersion) >= 0,
+                   (try? await post("/api/my-apps/\(a.id)", ["action": "latest"])) != nil { changed = true }
+            }
+        }
+        if changed { await refresh() }
+        deviceCheck += 1
+    }
+
     // The login is kept in the iPhone's Keychain so updates and reinstalls sign straight back in.
     private var loginKey: String { "login:" + (baseURL?.host ?? "") }
     var savedLogin: (String, String)? {
@@ -1013,6 +1066,11 @@ final class Server: ObservableObject {
     /// Downloads an app's original .ipa (for signing on this iPhone). Reports progress 0...1.
     func downloadIPA(_ app: SApp, versionIndex: Int, progress: @escaping (Double) -> Void) async throws -> URL {
         guard let u = url("/api/apps/\(app.id)/ipa?v=\(versionIndex)") else { throw MangoError("No server") }
+        return try await downloadFile(u, progress: progress)
+    }
+
+    /// Downloads any file from the server to a temporary place on this iPhone.
+    func downloadFile(_ u: URL, progress: @escaping (Double) -> Void) async throws -> URL {
         let dest = Paths.work.appendingPathComponent("\(UUID().uuidString.prefix(8))-download.ipa")
         let delegate = DownloadDelegate(progress: progress)
         let (tmp, resp) = try await session.download(for: URLRequest(url: u, timeoutInterval: 120), delegate: delegate)

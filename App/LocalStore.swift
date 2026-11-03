@@ -46,6 +46,8 @@ struct SignedApp: Identifiable, Codable, Hashable {
     var size: Int64
     var signedAt = Date()
     var expires: Date?
+    /// Set when this is a copy of an app signed on the server (its signed id there).
+    var serverId: String?
     var url: URL { Paths.signed.appendingPathComponent(fileName) }
 }
 
@@ -184,6 +186,47 @@ final class LocalStore: ObservableObject {
         signed.insert(result, at: 0)
         persist()
         return result
+    }
+
+    // MARK: copies of apps signed on the server (like ESign: everything you sign stays on your iPhone)
+
+    @Published var saving: [String: Double] = [:]
+    private var copyQueue = false
+    static var keepCopies: Bool {
+        get { UserDefaults.standard.object(forKey: "keepSignedCopies") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "keepSignedCopies") }
+    }
+
+    func copy(of serverId: String) -> SignedApp? { signed.first { $0.serverId == serverId } }
+
+    /// Downloads one signed app from the server into this iPhone.
+    func saveCopy(_ s: SSigned, server: Server) async throws {
+        if copy(of: s.id) != nil || saving[s.id] != nil { return }
+        guard let u = server.url("/api/signed/\(s.id)/file") else { return }
+        saving[s.id] = 0
+        defer { saving[s.id] = nil }
+        let tmp = try await server.downloadFile(u) { [weak self] p in self?.saving[s.id] = p }
+        let safe = s.name.replacingOccurrences(of: "/", with: "-")
+        let dest = Paths.signed.appendingPathComponent("\(safe) \(s.version ?? "") \(s.id.prefix(4)).ipa")
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: tmp, to: dest)
+        var copy = SignedApp(fileName: dest.lastPathComponent, name: s.name, bundleId: s.bundleId ?? "", version: s.version ?? "",
+                             certLabel: s.certLabel ?? "", size: fileSize(dest), expires: parseDate(s.expires))
+        copy.signedAt = parseDate(s.signedAt) ?? Date()
+        copy.serverId = s.id
+        if let iu = server.iconURL(s), let png = await ImageCache.shared.image(iu)?.pngData() { try? png.write(to: Paths.icon(copy.id)) }
+        signed.insert(copy, at: 0)
+        persist()
+    }
+
+    /// Saves every signed app that's still on the server and not on this iPhone yet, one at a time.
+    func saveMissingCopies(server: Server) async {
+        guard LocalStore.keepCopies, !copyQueue else { return }
+        copyQueue = true
+        defer { copyQueue = false }
+        for s in server.state?.signed ?? [] where s.fileAvailable == true && copy(of: s.id) == nil {
+            try? await saveCopy(s, server: server)
+        }
     }
 
     func delete(_ s: SignedApp) {

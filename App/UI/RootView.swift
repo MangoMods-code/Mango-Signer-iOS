@@ -45,7 +45,13 @@ struct RootView: View {
         }
         .task { await server.checkSession() }
         .onChange(of: phase) { p in
-            if p == .active && server.authed { Task { await server.refresh() } }
+            if p == .active && server.authed {
+                Task {
+                    await server.refresh()
+                    await server.syncWithDevice()
+                    await local.saveMissingCopies(server: server)
+                }
+            }
         }
         // "Open in Mango Signer": .ipa files go to the apps kept on this iPhone.
         .onOpenURL { url in
@@ -96,6 +102,10 @@ struct MainShell: View {
                 .tag(AppTab.settings)
         }
         .toast($router.toast)
+        .task {
+            await server.syncWithDevice(force: true)
+            await local.saveMissingCopies(server: server)
+        }
         .sheet(isPresented: Binding(get: { router.route != nil }, set: { if !$0 { router.close() } })) {
             SheetHost()
                 .environmentObject(server)
