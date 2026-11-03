@@ -64,12 +64,16 @@ enum DeviceApps {
     static func isInstalled(_ bundleId: String?) -> Bool? {
         guard let m = method, let id = bundleId, !id.isEmpty else { return nil }
         if m.check(id) == true || userApps.contains(where: { $0.id == id }) { return true }
-        return seesOtherApps ? false : nil
+        return trustsNotInstalled ? false : nil
     }
+
+    /// Some iOS versions show Apple's own apps but still hide the apps you installed yourself, so a
+    /// "not installed" answer only counts when iOS also lists at least one of your own apps.
+    static var trustsNotInstalled: Bool { seesOtherApps && !userApps.isEmpty }
 
     static var statusText: String {
         guard let m = method else { return "iOS won't say" }
-        return seesOtherApps ? "Checked on this iPhone (\(m.name))" : "iOS only shows Mango itself"
+        return trustsNotInstalled ? "Checked on this iPhone (\(m.name))" : seesOtherApps ? "iOS hides the apps you installed" : "iOS only shows Mango itself"
     }
 
     struct Seen: Identifiable, Hashable {

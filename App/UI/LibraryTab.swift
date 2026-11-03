@@ -399,7 +399,7 @@ struct AppRowView: View {
         let a = app
         let rating = a.votes > 0 ? "👍 \(Int((Double(a.likes ?? 0) * 100 / Double(a.votes)).rounded()))%" : ""
         let when = age ? "\(a.updatedAt != nil && a.updatedAt != a.addedAt ? "Updated" : "Added") \(ago(a.updatedAt ?? a.addedAt))" : ""
-        let sub2 = [when, a.developer ?? "", formatBytes(a.size), (a.installCount ?? 0) > 0 ? "🔥 \(a.installCount!)" : "", rating].filter { !$0.isEmpty }.joined(separator: " · ")
+        let sub2 = [when, formatBytes(a.size), a.developer ?? "", (a.installCount ?? 0) > 0 ? "🔥 \(a.installCount!)" : "", rating].filter { !$0.isEmpty }.joined(separator: " · ")
         let desc = (a.description ?? "").split(separator: "\n").first.map(String.init) ?? ""
         let badges = Lib.badges(a, server)
         HStack(spacing: 12) {
@@ -440,7 +440,8 @@ struct AppTile: View {
                         else if app.isNew { dot("NEW", Theme.mango, Theme.onAccent) }
                     }
                 Text(app.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                Text(app.shownVersion).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
+                Text([app.shownVersion, formatBytes(app.size)].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.85)
             }
             .padding(.vertical, 6).padding(.horizontal, 2)
         }

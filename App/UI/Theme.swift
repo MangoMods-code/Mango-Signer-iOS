@@ -213,9 +213,12 @@ func cleanNotes(_ text: String) -> String {
     return lines.joined(separator: "\n").replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+/// Same as the website: "512 KB", "86.7 MB", "1.14 GB".
 func formatBytes(_ n: Double?) -> String {
     guard let n, n > 0 else { return "" }
-    return ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
+    if n < 1_048_576 { return "\(max(1, Int((n / 1024).rounded()))) KB" }
+    if n < 1_073_741_824 { return String(format: "%.1f MB", n / 1_048_576) }
+    return String(format: "%.2f GB", n / 1_073_741_824)
 }
 
 // MARK: - Pieces that copy the website's look

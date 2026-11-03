@@ -293,7 +293,7 @@ struct SettingsTab: View {
             LinkRow(title: "📲 What iOS shows", value: "\(DeviceApps.userApps.count) of your apps") { router.open(.deviceApps) }
             RowLine()
             ValueRow(title: "What's installed", value: DeviceApps.statusText,
-                     sub: DeviceApps.seesOtherApps ? "" : "Mango goes by what you installed through it. Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed).")
+                     sub: DeviceApps.trustsNotInstalled ? "" : "Mango goes by what you installed through it. Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed).")
             RowLine()
             LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             RowLine()
