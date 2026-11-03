@@ -2,8 +2,66 @@ import Foundation
 import SwiftUI
 import UIKit
 
-// MARK: - What the Mango Signer server sends (only the fields the app uses; everything is optional
-// so a newer or older server never breaks decoding)
+// MARK: - What the Mango Signer server sends
+// Every model is read field by field and forgivingly: a number where text was expected (or the other way
+// round), a missing field or an odd value never stops the library from loading.
+
+struct AnyKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+    init(_ s: String) { stringValue = s }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+}
+
+/// One item of a list; an item that can't be read at all is skipped instead of breaking the whole list.
+struct Lossy<T: Decodable>: Decodable {
+    var value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+/// Text that may arrive as text, a number or true/false.
+struct FlexString: Decodable {
+    var value: String?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let s = try? c.decode(String.self) { value = s }
+        else if let i = try? c.decode(Int64.self) { value = String(i) }
+        else if let d = try? c.decode(Double.self) { value = String(d) }
+        else if let b = try? c.decode(Bool.self) { value = b ? "true" : "false" }
+        else { value = nil }
+    }
+}
+
+extension KeyedDecodingContainer where Key == AnyKey {
+    func str(_ k: String) -> String? { (try? decodeIfPresent(FlexString.self, forKey: AnyKey(k)))?.value }
+    func num(_ k: String) -> Double? {
+        let key = AnyKey(k)
+        if let d = try? decodeIfPresent(Double.self, forKey: key) { return d }
+        if let s = try? decodeIfPresent(String.self, forKey: key) { return Double(s) }
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b ? 1 : 0 }
+        return nil
+    }
+    func int(_ k: String) -> Int? { num(k).flatMap { $0.isFinite && abs($0) < 9e15 ? Int($0) : nil } }
+    func bool(_ k: String) -> Bool? {
+        let key = AnyKey(k)
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
+        if let d = try? decodeIfPresent(Double.self, forKey: key) { return d != 0 }
+        if let s = try? decodeIfPresent(String.self, forKey: key) { return ["true", "1", "yes"].contains(s.lowercased()) }
+        return nil
+    }
+    func strings(_ k: String) -> [String]? {
+        guard let list = try? decodeIfPresent([FlexString].self, forKey: AnyKey(k)) else { return nil }
+        return list.compactMap { $0.value }
+    }
+    func obj<T: Decodable>(_ k: String) -> T? { (try? decodeIfPresent(Lossy<T>.self, forKey: AnyKey(k)))?.value }
+    func list<T: Decodable>(_ k: String) -> [T]? {
+        guard let items = try? decodeIfPresent([Lossy<T>].self, forKey: AnyKey(k)) else { return nil }
+        return items.compactMap { $0.value }
+    }
+}
+
+private func keyed(_ decoder: Decoder) throws -> KeyedDecodingContainer<AnyKey> { try decoder.container(keyedBy: AnyKey.self) }
 
 struct Account: Decodable {
     var id: String
@@ -12,6 +70,13 @@ struct Account: Decodable {
     var udid: String?
     var deviceName: String?
     var isOwner: Bool { role == "owner" }
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        role = c.str("role") ?? "user"
+        id = c.str("id") ?? (role == "owner" ? "owner" : "")
+        username = c.str("username") ?? id
+        udid = c.str("udid"); deviceName = c.str("deviceName")
+    }
 }
 
 struct SInstalled: Decodable {
@@ -19,6 +84,10 @@ struct SInstalled: Decodable {
     var at: String?
     var stopped: String?
     var update: Bool?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        version = c.str("version"); at = c.str("at"); stopped = c.str("stopped"); update = c.bool("update")
+    }
 }
 
 struct SVersion: Decodable {
@@ -28,6 +97,11 @@ struct SVersion: Decodable {
     var notes: String?
     var channel: String?
     var manualId: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        version = c.str("version"); date = c.str("date"); size = c.num("size"); notes = c.str("notes")
+        channel = c.str("channel"); manualId = c.str("manualId")
+    }
 }
 
 struct SApp: Decodable, Identifiable {
@@ -63,6 +137,27 @@ struct SApp: Decodable, Identifiable {
     var remoteScreens: [String]?
     var tags: [String]?
 
+    struct NoId: Error {}
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        guard let id = c.str("id"), !id.isEmpty else { throw NoId() }
+        self.id = id
+        bundleId = c.str("bundleId")
+        name = c.str("name").flatMap { $0.isEmpty ? nil : $0 } ?? c.str("originalName") ?? bundleId ?? "App"
+        version = c.str("version"); build = c.str("build"); versionOverride = c.str("versionOverride")
+        minOS = c.str("minOS"); size = c.num("size"); description = c.str("description"); notes = c.str("notes")
+        developer = c.str("developer"); categoryId = c.str("categoryId")
+        featured = c.bool("featured"); published = c.bool("published"); hasIcon = c.bool("hasIcon"); customIcon = c.bool("customIcon")
+        iconVersion = c.num("iconVersion"); addedAt = c.str("addedAt"); updatedAt = c.str("updatedAt")
+        previousVersion = c.str("previousVersion")
+        installCount = c.int("installCount"); likes = c.int("likes"); dislikes = c.int("dislikes"); myVote = c.int("myVote")
+        installed = c.obj("installed")
+        cloud = c.str("cloud"); sourceName = c.str("sourceName"); missing = c.bool("missing")
+        versions = c.list("versions")
+        remoteScreens = c.strings("remoteScreens")
+        tags = c.strings("tags")
+    }
+
     var shownVersion: String { [versionOverride, version].compactMap { $0 }.first { !$0.isEmpty } ?? "" }
     var hasUpdate: Bool { installed?.update == true && installed?.stopped == nil }
     var isStopped: Bool { installed?.stopped != nil }
@@ -78,6 +173,10 @@ struct SCategory: Decodable, Identifiable {
     var name: String
     var emoji: String?
     var order: Int?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? ""; emoji = c.str("emoji"); order = c.int("order")
+    }
 }
 
 struct SProfile: Decodable {
@@ -86,15 +185,24 @@ struct SProfile: Decodable {
     var teamName: String?
     var expires: String?
     var deviceCount: Int?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        name = c.str("name"); type = c.str("type"); teamName = c.str("teamName"); expires = c.str("expires"); deviceCount = c.int("deviceCount")
+    }
 }
 
 struct SP12: Decodable {
     var commonName: String?
     var validTo: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        commonName = c.str("commonName"); validTo = c.str("validTo")
+    }
 }
 
 struct SCheck: Decodable {
     var status: String?
+    init(from decoder: Decoder) throws { status = try keyed(decoder).str("status") }
 }
 
 struct SCert: Decodable, Identifiable {
@@ -105,6 +213,11 @@ struct SCert: Decodable, Identifiable {
     var profile: SProfile?
     var check: SCheck?
     var deviceIncluded: Bool?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; label = c.str("label") ?? "Certificate"; isDefault = c.bool("isDefault")
+        p12 = c.obj("p12"); profile = c.obj("profile"); check = c.obj("check"); deviceIncluded = c.bool("deviceIncluded")
+    }
 
     var expires: Date? { [parseDate(p12?.validTo), parseDate(profile?.expires)].compactMap { $0 }.min() }
     var daysLeft: Int? { expires.map { Calendar.current.dateComponents([.day], from: Date(), to: $0).day ?? 0 } }
@@ -127,6 +240,14 @@ struct SSigned: Decodable, Identifiable {
     var onPhone: Bool?
     var installUrl: String?
     var shareUrl: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "App"
+        appId = c.str("appId"); bundleId = c.str("bundleId"); version = c.str("version"); certLabel = c.str("certLabel")
+        size = c.num("size"); hasIcon = c.bool("hasIcon"); signedAt = c.str("signedAt") ?? c.str("createdAt"); expires = c.str("expires")
+        token = c.str("token"); fileAvailable = c.bool("fileAvailable"); savedOnGithub = c.bool("savedOnGithub"); onPhone = c.bool("onPhone")
+        installUrl = c.str("installUrl"); shareUrl = c.str("shareUrl")
+    }
 }
 
 struct SAlert: Decodable, Identifiable {
@@ -137,33 +258,37 @@ struct SAlert: Decodable, Identifiable {
     var at: String?
     var read: Bool?
     var appId: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; kind = c.str("kind"); title = c.str("title"); body = c.str("body")
+        at = c.str("at"); read = c.bool("read"); appId = c.str("appId")
+    }
 }
 
 struct SSettings: Decodable {
     var signsPerDay: Int?
     var signsToday: Int?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday")
+    }
 }
 
 struct SServerInfo: Decodable {
     var version: String?
     var https: Bool?
     var baseUrl: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        version = c.str("version"); https = c.bool("https"); baseUrl = c.str("baseUrl")
+    }
 }
 
 struct SAnnouncement: Decodable {
     var text: String?
-}
-
-/// Decodes one item of a list; an item that doesn't fit is skipped instead of breaking the whole list.
-struct Lossy<T: Decodable>: Decodable {
-    var value: T?
-    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
-}
-
-extension KeyedDecodingContainer {
-    func lossyList<T: Decodable>(_ key: Key) -> [T]? {
-        guard let items = try? decodeIfPresent([Lossy<T>].self, forKey: key) else { return nil }
-        return items.compactMap { $0.value }
+    init(from decoder: Decoder) throws {
+        if let s = try? decoder.singleValueContainer().decode(String.self) { text = s; return }
+        text = try keyed(decoder).str("text")
     }
 }
 
@@ -180,24 +305,20 @@ struct ServerState: Decodable {
     var announcement: SAnnouncement?
     var skipped = 0
 
-    enum CodingKeys: String, CodingKey {
-        case account, apps, categories, certs, signed, favorites, alerts, settings, server, announcement
-    }
-
     init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        account = try c.decode(Account.self, forKey: .account)
-        let rawApps = (try? c.decodeIfPresent([Lossy<SApp>].self, forKey: .apps)) ?? []
+        let c = try keyed(decoder)
+        account = try c.decode(Account.self, forKey: AnyKey("account"))
+        let rawApps = (try? c.decodeIfPresent([Lossy<SApp>].self, forKey: AnyKey("apps"))) ?? []
         apps = rawApps.compactMap { $0.value }
         skipped = rawApps.count - apps.count
-        categories = c.lossyList(.categories)
-        certs = c.lossyList(.certs)
-        signed = c.lossyList(.signed)
-        favorites = c.lossyList(.favorites)
-        alerts = c.lossyList(.alerts)
-        settings = try? c.decodeIfPresent(SSettings.self, forKey: .settings)
-        server = try? c.decodeIfPresent(SServerInfo.self, forKey: .server)
-        announcement = try? c.decodeIfPresent(SAnnouncement.self, forKey: .announcement)
+        categories = c.list("categories")
+        certs = c.list("certs")
+        signed = c.list("signed")
+        favorites = c.strings("favorites")
+        alerts = c.list("alerts")
+        settings = c.obj("settings")
+        server = c.obj("server")
+        announcement = c.obj("announcement")
     }
 }
 
@@ -206,10 +327,15 @@ struct SessionInfo: Decodable {
     var account: Account?
     var udidLogin: Bool?
     var version: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        authed = c.bool("authed") ?? false; account = c.obj("account"); udidLogin = c.bool("udidLogin"); version = c.str("version")
+    }
 }
 
 struct JobResult: Decodable {
     var signed: SSigned?
+    init(from decoder: Decoder) throws { signed = try keyed(decoder).obj("signed") }
 }
 
 struct JobStatus: Decodable {
@@ -218,6 +344,10 @@ struct JobStatus: Decodable {
     var error: String?
     var progress: Double?
     var result: JobResult?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        status = c.str("status") ?? "running"; log = c.strings("log"); error = c.str("error"); progress = c.num("progress"); result = c.obj("result")
+    }
 }
 
 struct InstallStatus: Decodable {
@@ -225,11 +355,19 @@ struct InstallStatus: Decodable {
     var progress: Double?
     var sent: Double?
     var size: Double?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        phase = c.str("phase") ?? "idle"; progress = c.num("progress"); sent = c.num("sent"); size = c.num("size")
+    }
 }
 
 struct WhatsNewSection: Decodable {
     var title: String
     var items: [String]
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        title = c.str("title") ?? ""; items = c.strings("items") ?? []
+    }
 }
 
 struct WhatsNewEntry: Decodable, Identifiable {
@@ -239,6 +377,10 @@ struct WhatsNewEntry: Decodable, Identifiable {
     var summary: String?
     var sections: [WhatsNewSection]?
     var id: String { version }
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        version = c.str("version") ?? ""; date = c.str("date"); title = c.str("title"); summary = c.str("summary"); sections = c.list("sections")
+    }
 }
 
 struct TaskInfo: Decodable, Identifiable {
@@ -251,6 +393,12 @@ struct TaskInfo: Decodable, Identifiable {
     var cancellable: Bool?
     var waitingFor: String?
     var position: Int?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        id = c.str("id") ?? UUID().uuidString; title = c.str("title"); status = c.str("status") ?? "running"
+        progress = c.num("progress"); last = c.str("last"); error = c.str("error"); cancellable = c.bool("cancellable")
+        waitingFor = c.str("waitingFor"); position = c.int("position")
+    }
 }
 
 // MARK: - Dates
