@@ -40,11 +40,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             MARKETING_VERSION="0.1.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             build 2>&1 | tee build.log | grep -E "error:|warning: .*MangoSigner/App|\*\* BUILD" || true
-          test -d build/Build/Products/Release-iphoneos/MangoSigner.app
+          # The app must really contain its program (a failed compile can still leave an empty .app folder).
+          test -f build/Build/Products/Release-iphoneos/MangoSigner.app/MangoSigner
 
-      - name: Show errors
+      - name: Publish the errors
         if: failure()
-        run: grep -E "error:" -A3 build.log | head -200 || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -E "error:" -A3 build.log | head -400 > build-errors.txt || true
+          [ -s build-errors.txt ] || tail -200 build.log > build-errors.txt
+          cat build-errors.txt
+          gh release create "failed-${{ github.run_number }}" build-errors.txt --prerelease \
+            --title "Build ${{ github.run_number }} failed" --notes "Compile errors from commit ${GITHUB_SHA::7}." || true
 
       - name: Package .ipa
         run: |
