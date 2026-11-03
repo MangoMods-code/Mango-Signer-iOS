@@ -1,10 +1,13 @@
 import Foundation
 import UIKit
 
-/// What's actually installed on this iPhone. Uses the same system call sideloading apps (ESign, Feather…) use:
-/// iOS's app workspace, looked up at run time. If iOS ever stops answering, everything here returns nil and
-/// the app falls back to what the server remembers.
+/// What's actually installed on this iPhone. iOS keeps changing which of its (unofficial) ways of asking still
+/// answer, so this tries each one and uses the first that passes a self-test: it must see Mango Signer itself as
+/// installed and a made-up app as not installed. If none pass, everything here returns nil and the app falls
+/// back to what the server remembers (and the "Not on my phone anymore" buttons).
 enum DeviceApps {
+    private typealias Check = (String) -> Bool?
+
     private static let workspace: NSObject? = {
         guard let cls = NSClassFromString("LSApplicationWorkspace") as? NSObject.Type else { return nil }
         let sel = NSSelectorFromString("defaultWorkspace")
@@ -12,33 +15,53 @@ enum DeviceApps {
         return cls.perform(sel)?.takeUnretainedValue() as? NSObject
     }()
 
-    private static func ask(_ id: String) -> Bool? {
+    // 1. LSApplicationWorkspace -applicationIsInstalled:
+    private static func viaWorkspace(_ id: String) -> Bool? {
         let sel = NSSelectorFromString("applicationIsInstalled:")
         guard let ws = workspace, ws.responds(to: sel) else { return nil }
         typealias Fn = @convention(c) (AnyObject, Selector, NSString) -> Bool
-        let fn = unsafeBitCast(ws.method(for: sel), to: Fn.self)
-        return fn(ws, sel, id as NSString)
+        return unsafeBitCast(ws.method(for: sel), to: Fn.self)(ws, sel, id as NSString)
     }
 
-    /// True only if iOS really answers (it must see Mango Signer itself as installed).
-    static let available: Bool = {
-        guard let me = Bundle.main.bundleIdentifier else { return false }
-        return ask(me) == true
+    // 2. LSApplicationProxy +applicationProxyForIdentifier: then its install state
+    private static func proxy(_ id: String) -> NSObject? {
+        guard let cls = NSClassFromString("LSApplicationProxy") as? NSObject.Type else { return nil }
+        let sel = NSSelectorFromString("applicationProxyForIdentifier:")
+        guard cls.responds(to: sel) else { return nil }
+        return cls.perform(sel, with: id)?.takeUnretainedValue() as? NSObject
+    }
+    private static func viaProxy(_ id: String) -> Bool? {
+        guard let p = proxy(id) else { return nil }
+        if p.responds(to: NSSelectorFromString("appState")), let st = p.value(forKey: "appState") as? NSObject,
+           st.responds(to: NSSelectorFromString("isInstalled")), let v = st.value(forKey: "isInstalled") as? Bool { return v }
+        if p.responds(to: NSSelectorFromString("isInstalled")), let v = p.value(forKey: "isInstalled") as? Bool { return v }
+        return nil
+    }
+
+    private static let methods: [(String, Check)] = [("workspace", viaWorkspace), ("proxy", viaProxy)]
+
+    /// The way of asking that works on this iPhone (nil if none does).
+    static let method: (name: String, check: Check)? = {
+        guard let me = Bundle.main.bundleIdentifier else { return nil }
+        let fake = "com.mango.not-installed.\(UUID().uuidString.prefix(8).lowercased())"
+        for (name, check) in methods where check(me) == true && check(fake) == false {
+            return (name, check)
+        }
+        return nil
     }()
 
+    static var available: Bool { method != nil }
+
     static func isInstalled(_ bundleId: String?) -> Bool? {
-        guard available, let id = bundleId, !id.isEmpty else { return nil }
-        return ask(id)
+        guard let m = method, let id = bundleId, !id.isEmpty else { return nil }
+        return m.check(id)
     }
 
     /// The installed copy's version ("1.2.3"), if iOS says.
     static func version(_ bundleId: String?) -> String? {
-        guard available, let id = bundleId, !id.isEmpty, isInstalled(id) == true,
-              let cls = NSClassFromString("LSApplicationProxy") as? NSObject.Type else { return nil }
-        let sel = NSSelectorFromString("applicationProxyForIdentifier:")
-        guard cls.responds(to: sel), let proxy = cls.perform(sel, with: id)?.takeUnretainedValue() as? NSObject else { return nil }
+        guard let id = bundleId, isInstalled(id) == true, let p = proxy(id) else { return nil }
         for key in ["shortVersionString", "bundleVersion"] {
-            if proxy.responds(to: NSSelectorFromString(key)), let v = proxy.value(forKey: key) as? String, !v.isEmpty { return v }
+            if p.responds(to: NSSelectorFromString(key)), let v = p.value(forKey: key) as? String, !v.isEmpty { return v }
         }
         return nil
     }
@@ -49,8 +72,7 @@ enum DeviceApps {
         let sel = NSSelectorFromString("openApplicationWithBundleID:")
         guard let ws = workspace, ws.responds(to: sel) else { return false }
         typealias Fn = @convention(c) (AnyObject, Selector, NSString) -> Bool
-        let fn = unsafeBitCast(ws.method(for: sel), to: Fn.self)
-        return fn(ws, sel, bundleId as NSString)
+        return unsafeBitCast(ws.method(for: sel), to: Fn.self)(ws, sel, bundleId as NSString)
     }
 }
 

@@ -178,6 +178,18 @@ struct SignedRow: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
         .contentShape(Rectangle())
         .onTapGesture { router.open(.signed(s.id)) }
+        .contextMenu {
+            if s.onPhone == true && phone.installed != true, let appId = s.appId {
+                Button { notOnPhone(appId) } label: { Label("Not on my phone anymore", systemImage: "iphone.slash") }
+            }
+            if let copy { ShareLink(item: copy.url) { Label("Share .ipa", systemImage: "square.and.arrow.up") } }
+        }
+    }
+
+    func notOnPhone(_ appId: String) {
+        Task {
+            do { try await server.post("/api/my-apps/\(appId)", ["action": "remove"]); await server.refresh(); router.say("Removed from your installed apps") } catch { router.say(error.localizedDescription) }
+        }
     }
 
     func badges(_ phone: PhoneStatus, copy: SignedApp?, saving: Double?) -> [Badge] {
@@ -185,7 +197,7 @@ struct SignedRow: View {
         if phone.installed == true {
             b.append(Badge(text: phone.isSame(as: s.version) ? "✓ On this iPhone" : "On this iPhone · v\(phone.version ?? "?")", style: .good, small: true))
         } else if phone.installed == nil && s.onPhone == true {
-            b.append(Badge(text: "On your phone", style: .good, small: true))
+            b.append(Badge(text: "On your phone?", style: .good, small: true))
         }
         if let left = s.daysLeft {
             if left < 0 { b.append(Badge(text: "Cert expired", style: .bad, small: true)) }
@@ -298,6 +310,13 @@ struct SignedSheet: View {
                         router.open(.sign(appId, presetId: nil))
                     }
                     if s.fileAvailable == true { WebButton(title: "Reset install link") { confirmRelink = true } }
+                    if s.onPhone == true && phone.installed != true, let appId = s.appId {
+                        WebButton(title: "Not on my phone anymore") {
+                            Task {
+                                do { try await server.post("/api/my-apps/\(appId)", ["action": "remove"]); await server.refresh(); router.say("Removed from your installed apps") } catch { router.say(error.localizedDescription) }
+                            }
+                        }
+                    }
                     WebButton(title: "Delete", kind: .danger) { confirmDelete = true }
                 }
                 .padding(.top, 10)
