@@ -281,16 +281,19 @@ struct SApp: Decodable, Identifiable {
         extensions = c.int("extensions"); hasWatch = c.bool("hasWatch")
         signDefaults = c.obj("signDefaults")
         remoteUrl = c.str("remoteUrl")
+        let added = parseDate(addedAt), updated = parseDate(updatedAt)
+        isNew = Date().timeIntervalSince(added ?? .distantPast) < 3 * 86400
+        isUpdatedRecently = !isNew && previousVersion != nil && Date().timeIntervalSince(updated ?? .distantPast) < 3 * 86400
+        sortDate = updated ?? added ?? .distantPast
     }
 
     var shownVersion: String { [versionOverride, version].compactMap { $0 }.first { !$0.isEmpty } ?? "" }
     var hasUpdate: Bool { installed?.update == true && installed?.stopped == nil }
     var isStopped: Bool { installed?.stopped != nil }
-    var isNew: Bool { (Date().timeIntervalSince(parseDate(addedAt) ?? .distantPast)) < 3 * 86400 }
-    var isUpdatedRecently: Bool {
-        !isNew && previousVersion != nil && (Date().timeIntervalSince(parseDate(updatedAt) ?? .distantPast)) < 3 * 86400
-    }
-    var sortDate: Date { parseDate(updatedAt) ?? parseDate(addedAt) ?? .distantPast }
+    // Worked out once when the library loads (sorting thousands of apps re-reads these constantly).
+    var isNew = false
+    var isUpdatedRecently = false
+    var sortDate = Date.distantPast
     var isSourceApp: Bool { cloud == "source" || cloud == "telegram" }
     var votes: Int { (likes ?? 0) + (dislikes ?? 0) }
     var score: Int { (likes ?? 0) - (dislikes ?? 0) }
@@ -752,17 +755,14 @@ func parseDate(_ s: String?) -> Date? {
     guard let s, !s.isEmpty else { return nil }
     if let d = isoFrac.date(from: s) ?? isoPlain.date(from: s) { return d }
     // "2026-11-02" style
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.dateFormat = "yyyy-MM-dd"
-    return f.date(from: String(s.prefix(10)))
+    return dayOnly.date(from: String(s.prefix(10)))
 }
+private let dayOnly: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"; return f }()
+private let relative: RelativeDateTimeFormatter = { let f = RelativeDateTimeFormatter(); f.unitsStyle = .full; return f }()
 
 func ago(_ s: String?) -> String {
     guard let d = parseDate(s) else { return "" }
-    let f = RelativeDateTimeFormatter()
-    f.unitsStyle = .full
-    return f.localizedString(for: d, relativeTo: Date())
+    return relative.localizedString(for: d, relativeTo: Date())
 }
 
 // MARK: - Talking to the server
@@ -775,7 +775,12 @@ final class Server: ObservableObject {
     static var builtInServer: URL? {
         (Bundle.main.object(forInfoDictionaryKey: "MangoServerURL") as? String).flatMap { $0.isEmpty ? nil : normalize($0) }
     }
-    @Published var state: ServerState?
+    @Published var state: ServerState? { didSet { libCache.removeAll(); countCache.removeAll(); appIndex = Dictionary((state?.apps ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) } }
+    /// Library lists and filter counts, worked out once per library load instead of on every redraw.
+    var libCache: [String: [SApp]] = [:]
+    var countCache: [String: Int] = [:]
+    var appIndex: [String: SApp] = [:]
+    func app(_ id: String?) -> SApp? { id.flatMap { appIndex[$0] } }
     @Published var authed = false
     @Published var checking = true
     @Published var tasks: [TaskInfo] = []
@@ -908,7 +913,9 @@ final class Server: ObservableObject {
         do {
             let d = try await data("GET", "/api/state")
             do {
-                state = try JSONDecoder().decode(ServerState.self, from: d)
+                // Reading a big library takes a moment; do it off the main thread so the app never freezes.
+                let decoded = try await Task.detached(priority: .userInitiated) { try JSONDecoder().decode(ServerState.self, from: d) }.value
+                state = decoded
                 loadError = nil
             } catch {
                 loadError = "The app couldn't read your server's library (\(Server.describe(error))). Make sure the server is up to date."

@@ -9,7 +9,7 @@ struct AppSheet: View {
     @State private var openNotes: Set<Int> = []
     @State private var confirmDelete = false
 
-    var app: SApp? { server.state?.apps.first { $0.id == appId } }
+    var app: SApp? { server.app(appId) }
 
     var body: some View {
         if let a = app {

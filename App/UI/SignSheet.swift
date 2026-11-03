@@ -56,7 +56,7 @@ struct SignSheet: View {
     @State private var presetName = ""
     @State private var ready = false
 
-    var app: SApp? { server.state?.apps.first { $0.id == appId } }
+    var app: SApp? { server.app(appId) }
     var certs: [SCert] { server.certs }
     var cert: SCert? { certs.first { $0.id == certId } ?? server.defaultCert }
     var presets: [SPreset] { server.state?.presets ?? [] }

@@ -24,7 +24,12 @@ enum Lib {
         }
     }
 
-    static func count(_ key: String, _ server: Server) -> Int { (server.state?.apps ?? []).filter { matches($0, key, server) }.count }
+    static func count(_ key: String, _ server: Server) -> Int {
+        if let n = server.countCache[key] { return n }
+        let n = (server.state?.apps ?? []).filter { matches($0, key, server) }.count
+        server.countCache[key] = n
+        return n
+    }
 
     struct Group { let title: String; let items: [(String, String)] }
 
@@ -50,6 +55,15 @@ enum Lib {
     }
 
     static func filtered(_ server: Server, cat: String, query: String, sort: String) -> [SApp] {
+        let cacheKey = "\(cat)|\(sort)|\(query)"
+        if let hit = server.libCache[cacheKey] { return hit }
+        if server.libCache.count > 40 { server.libCache.removeAll() }
+        let result = filteredFresh(server, cat: cat, query: query, sort: sort)
+        server.libCache[cacheKey] = result
+        return result
+    }
+
+    private static func filteredFresh(_ server: Server, cat: String, query: String, sort: String) -> [SApp] {
         var apps = server.state?.apps ?? []
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty {
