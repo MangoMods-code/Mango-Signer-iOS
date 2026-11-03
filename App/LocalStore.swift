@@ -51,7 +51,7 @@ struct SignedApp: Identifiable, Codable, Hashable {
 
 /// Everything the app knows, saved as small JSON files in Application Support.
 @MainActor
-final class AppStore: ObservableObject {
+final class LocalStore: ObservableObject {
     @Published var apps: [LibraryApp] = []
     @Published var certs: [SigningCert] = []
     @Published var signed: [SignedApp] = []
@@ -161,19 +161,26 @@ final class AppStore: ObservableObject {
     // MARK: signing
 
     func sign(_ app: LibraryApp, with cert: SigningCert, options: SignOptions) async throws -> SignedApp {
+        let icon = try? Data(contentsOf: Paths.icon(app.id))
+        return try await signFile(app.url, name: app.name, bundleId: app.bundleId, version: app.version, icon: icon, with: cert, options: options)
+    }
+
+    /// Signs any .ipa on this iPhone (one from the library here, or one just downloaded from the server).
+    func signFile(_ input: URL, name: String, bundleId: String, version: String, icon: Data?, with cert: SigningCert, options: SignOptions) async throws -> SignedApp {
         let id = UUID()
-        let safeName = (options.name.isEmpty ? app.name : options.name).replacingOccurrences(of: "/", with: "-")
+        let shownName = options.name.isEmpty ? name : options.name
+        let safeName = shownName.replacingOccurrences(of: "/", with: "-")
         let out = Paths.signed.appendingPathComponent("\(safeName) \(id.uuidString.prefix(6)).ipa")
-        let input = app.url, p12 = cert.p12URL, prov = cert.provURL, password = cert.password
+        let p12 = cert.p12URL, prov = cert.provURL, password = cert.password
         _ = try await Task.detached(priority: .userInitiated) {
             try Signer.sign(input: input, output: out, p12: p12, password: password, provision: prov, options: options)
         }.value
-        var result = SignedApp(fileName: out.lastPathComponent, name: options.name.isEmpty ? app.name : options.name,
-                               bundleId: options.bundleId.isEmpty ? app.bundleId : options.bundleId,
-                               version: options.version.isEmpty ? app.version : options.version,
+        var result = SignedApp(fileName: out.lastPathComponent, name: shownName,
+                               bundleId: options.bundleId.isEmpty ? bundleId : options.bundleId,
+                               version: options.version.isEmpty ? version : options.version,
                                certLabel: cert.label, size: fileSize(out), expires: cert.expires)
         result.id = id
-        try? FileManager.default.copyItem(at: Paths.icon(app.id), to: Paths.icon(id))
+        if let icon { try? icon.write(to: Paths.icon(id)) }
         signed.insert(result, at: 0)
         persist()
         return result
