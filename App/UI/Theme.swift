@@ -570,15 +570,20 @@ struct WebIcon: View {
     let name: String
     var size: CGFloat = 54
     @State private var image: UIImage?
+    /// Which picture `image` is, so a reused icon spot (a new app in the same place) never keeps the old picture.
+    @State private var shownURL: URL?
     var radius: CGFloat { size >= 70 ? size * 0.237 : size * 0.24 }
     init(url: URL?, name: String, size: CGFloat = 54) {
         self.url = url; self.name = name; self.size = size
         // Already downloaded: show it straight away (no flash while scrolling back).
         _image = State(initialValue: url.flatMap { ImageCache.shared.cached($0) })
+        _shownURL = State(initialValue: url)
     }
+    /// The picture for this exact app (never another app's).
+    var current: UIImage? { shownURL == url ? image : url.flatMap { ImageCache.shared.cached($0) } }
     var body: some View {
         ZStack {
-            if let image {
+            if let image = current {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 LinearGradient(colors: [Theme.card2, Theme.icon], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -589,9 +594,13 @@ struct WebIcon: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Theme.line))
         .task(id: url) {
-            guard let url else { image = nil; return }
+            guard let url else { image = nil; shownURL = nil; return }
+            if shownURL == url, image != nil { return }
+            image = ImageCache.shared.cached(url)
+            shownURL = url
             if image != nil { return }
-            image = await ImageCache.shared.image(url, maxPixels: size * 3)
+            let loaded = await ImageCache.shared.image(url, maxPixels: size * 3)
+            if shownURL == url { image = loaded }
         }
     }
 }

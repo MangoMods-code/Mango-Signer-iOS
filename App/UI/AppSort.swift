@@ -116,6 +116,8 @@ struct QuickSortSheet: View {
         }
         .task {
             guard !loaded else { return }
+            // Start from what the server has now (so apps you just sorted don't come back).
+            await server.refresh()
             queue = (server.state?.apps ?? []).filter { server.category($0.categoryId) == nil }.map { $0.id }
             if !queue.isEmpty, let r = try? await server.post("/api/apps/category-guesses", ["ids": queue]), let g = r["guesses"] as? [String: [String: Any]] {
                 for (id, v) in g { guesses[id] = Guess(categoryId: v["categoryId"] as? String, newCategory: v["newCategory"] as? String, why: v["why"] as? String ?? "") }
@@ -127,6 +129,8 @@ struct QuickSortSheet: View {
         } message: {
             Text("People who installed it keep it.\(confirmDelete?.isSourceApp == true ? " \(confirmDelete?.sourceName ?? "Its source") won't add it back." : "") This can't be undone.")
         }
+        // Closed by swiping down: still bring the library up to date with what you sorted.
+        .onDisappear { if done > 0 || !gone.isEmpty { Task { await server.refresh() } } }
         .alert("New category", isPresented: $newCat) {
             TextField("Name, e.g. Emulators", text: $newCatName)
             TextField("Emoji", text: $newCatEmoji)
