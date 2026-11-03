@@ -66,13 +66,42 @@ enum DeviceApps {
         return nil
     }
 
-    /// Opens an installed app.
-    @discardableResult
-    static func open(_ bundleId: String) -> Bool {
+    /// True for Mango Signer itself (no point offering to open the app you're in).
+    static func isSelf(_ bundleId: String?) -> Bool { bundleId != nil && bundleId == Bundle.main.bundleIdentifier }
+
+    private static func openDirect(_ bundleId: String) -> Bool {
         let sel = NSSelectorFromString("openApplicationWithBundleID:")
         guard let ws = workspace, ws.responds(to: sel) else { return false }
         typealias Fn = @convention(c) (AnyObject, Selector, NSString) -> Bool
         return unsafeBitCast(ws.method(for: sel), to: Fn.self)(ws, sel, bundleId as NSString)
+    }
+
+    /// The link schemes an app answers to ("whatsapp", "fb123…"), read from its saved .ipa or from iOS.
+    static func schemes(_ bundleId: String, ipa: URL?) -> [String] {
+        var out: [String] = []
+        if let p = proxy(bundleId), p.responds(to: NSSelectorFromString("claimedURLSchemes")),
+           let list = p.value(forKey: "claimedURLSchemes") as? [String] { out += list }
+        if let ipa, let names = try? IPAReader.names(in: ipa),
+           let path = names.first(where: { $0.hasPrefix("Payload/") && $0.hasSuffix(".app/Info.plist") && $0.split(separator: "/").count == 3 }),
+           let data = try? IPAReader.entry(path, in: ipa),
+           let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let types = info["CFBundleURLTypes"] as? [[String: Any]] {
+            for t in types { out += (t["CFBundleURLSchemes"] as? [String]) ?? [] }
+        }
+        var seen = Set<String>()
+        return out.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
+    /// Opens an installed app: directly if iOS allows it, otherwise through one of its own links.
+    @MainActor
+    static func open(_ bundleId: String, ipa: URL? = nil) async -> Bool {
+        if isSelf(bundleId) { return true }
+        if openDirect(bundleId) { return true }
+        for scheme in schemes(bundleId, ipa: ipa) {
+            guard let u = URL(string: "\(scheme)://") else { continue }
+            if await UIApplication.shared.open(u) { return true }
+        }
+        return false
     }
 }
 

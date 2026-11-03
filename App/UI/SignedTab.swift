@@ -165,8 +165,8 @@ struct SignedRow: View {
             Spacer(minLength: 4)
             if busy {
                 ProgressView().tint(Theme.mango).frame(width: 60)
-            } else if phone.isSame(as: s.version), let id = s.bundleId {
-                PillButton(title: "Open") { if !DeviceApps.open(id) { router.say("Couldn't open it") } }
+            } else if phone.isSame(as: s.version), let id = s.bundleId, !DeviceApps.isSelf(id) {
+                PillButton(title: "Open") { openApp(id, ipa: copy?.url) }
             } else if s.fileAvailable == true {
                 PillButton(title: "Get") { router.startInstall(s, server: server) }
             } else if let copy {
@@ -186,6 +186,10 @@ struct SignedRow: View {
         }
     }
 
+    func openApp(_ id: String, ipa: URL?) {
+        Task { if !(await DeviceApps.open(id, ipa: ipa)) { router.say("iOS won't let Mango open this one — open it from your Home Screen") } }
+    }
+
     func notOnPhone(_ appId: String) {
         Task {
             do { try await server.post("/api/my-apps/\(appId)", ["action": "remove"]); await server.refresh(); router.say("Removed from your installed apps") } catch { router.say(error.localizedDescription) }
@@ -194,7 +198,9 @@ struct SignedRow: View {
 
     func badges(_ phone: PhoneStatus, copy: SignedApp?, saving: Double?) -> [Badge] {
         var b: [Badge] = []
-        if phone.installed == true {
+        if DeviceApps.isSelf(s.bundleId) && phone.isSame(as: s.version) {
+            b.append(Badge(text: "✓ This app", style: .good, small: true))
+        } else if phone.installed == true {
             b.append(Badge(text: phone.isSame(as: s.version) ? "✓ On this iPhone" : "On this iPhone · v\(phone.version ?? "?")", style: .good, small: true))
         } else if phone.installed == nil && s.onPhone == true {
             b.append(Badge(text: "On your phone?", style: .good, small: true))
@@ -240,11 +246,17 @@ struct LocalSignedRow: View {
                 Text(copy.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 Text("\(copy.version) · \(copy.certLabel)").font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
                 Text("Signed \(copy.signedAt.formatted(.relative(presentation: .named))) · \(formatSize(copy.size))").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                if phone.installed == true { BadgeFlow(badges: [Badge(text: "✓ On this iPhone", style: .good, small: true)]).padding(.top, 4) }
+                if phone.installed == true {
+                    BadgeFlow(badges: [phone.isSame(as: copy.version)
+                        ? Badge(text: DeviceApps.isSelf(copy.bundleId) ? "✓ This app" : "✓ On this iPhone", style: .good, small: true)
+                        : Badge(text: "v\(phone.version ?? "?") is on this iPhone", small: true)]).padding(.top, 4)
+                }
             }
             Spacer(minLength: 4)
-            if phone.installed == true {
-                PillButton(title: "Open") { if !DeviceApps.open(copy.bundleId) { router.say("Couldn't open it") } }
+            if phone.isSame(as: copy.version) && !DeviceApps.isSelf(copy.bundleId) {
+                PillButton(title: "Open") {
+                    Task { if !(await DeviceApps.open(copy.bundleId, ipa: copy.url)) { router.say("iOS won't let Mango open this one — open it from your Home Screen") } }
+                }
             }
             ShareLink(item: copy.url) {
                 Text("Share").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.mango)
@@ -279,8 +291,10 @@ struct SignedSheet: View {
                 }
                 KVList(items: kv(s, phone: phone, copy: copy))
                 VStack(spacing: 10) {
-                    if phone.isSame(as: s.version), let id = s.bundleId {
-                        WebButton(title: "Open", kind: .primary, big: true) { if !DeviceApps.open(id) { router.say("Couldn't open it") } }
+                    if phone.isSame(as: s.version), let id = s.bundleId, !DeviceApps.isSelf(id) {
+                        WebButton(title: "Open", kind: .primary, big: true) {
+                            Task { if !(await DeviceApps.open(id, ipa: copy?.url)) { router.say("iOS won't let Mango open this one — open it from your Home Screen") } }
+                        }
                     }
                     if s.fileAvailable == true {
                         WebButton(title: phone.installed == true ? "Install again" : "Install", kind: phone.isSame(as: s.version) ? .normal : .primary, big: !phone.isSame(as: s.version)) {
