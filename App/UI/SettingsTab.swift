@@ -243,8 +243,8 @@ struct SettingsTab: View {
                           if v { Task { await local.saveMissingCopies(server: server) } }
                       }))
             RowLine()
-            ValueRow(title: "What's installed", value: DeviceApps.method.map { "Checked on this iPhone (\($0.name))" } ?? "iOS won't say",
-                     sub: DeviceApps.available ? "" : "Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed)")
+            ValueRow(title: "What's installed", value: DeviceApps.statusText,
+                     sub: DeviceApps.seesOtherApps ? "" : "Mango goes by what you installed through it. Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed).")
             RowLine()
             LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             RowLine()

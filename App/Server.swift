@@ -918,7 +918,9 @@ final class Server: ObservableObject {
             guard !ids.isEmpty else { continue }
             let here = ids.filter { DeviceApps.isInstalled($0) == true }
             if here.isEmpty {
-                if (try? await post("/api/my-apps/\(a.id)", ["action": "remove"])) != nil { changed = true }
+                // Only when iOS really answers about other apps (otherwise "not installed" means nothing).
+                let gone = ids.allSatisfy { DeviceApps.isInstalled($0) == false }
+                if gone, (try? await post("/api/my-apps/\(a.id)", ["action": "remove"])) != nil { changed = true }
             } else if a.hasUpdate {
                 let newest = here.compactMap { DeviceApps.version($0) }.max { versionCompare($0, $1) < 0 }
                 if let v = newest, versionCompare(v, a.shownVersion) >= 0,

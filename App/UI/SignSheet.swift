@@ -508,6 +508,7 @@ struct SigningSheet: View {
                 router.locked = false
                 await server.refresh()
                 if LocalStore.keepCopies { let l = local, srv = server; Task { try? await l.saveCopy(s, server: srv) } }
+                Task { await server.syncWithDevice(force: true) }
                 let jit = ((run.body["entitlements"] as? [[String: Any]]) ?? []).contains { ($0["key"] as? String) == "get-task-allow" }
                 router.open(.ready(s.id, jit: jit))
                 return
@@ -644,7 +645,12 @@ struct InstallSheet: View {
                         if Task.isCancelled { return }
                         if let r: R = try? await server.get("/api/signed/\(s.id)/install") {
                             st = r.install
-                            if r.install.phase == "done" { await server.refresh(); return }
+                            if r.install.phase == "done" {
+                                await server.refresh()
+                                try? await Task.sleep(nanoseconds: 4_000_000_000) // give iOS a moment to finish putting it on the Home Screen
+                                await server.syncWithDevice(force: true)
+                                return
+                            }
                         }
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
                     }

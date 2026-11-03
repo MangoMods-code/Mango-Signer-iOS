@@ -52,9 +52,24 @@ enum DeviceApps {
 
     static var available: Bool { method != nil }
 
+    /// Newer iOS lets an app see itself but answers "not installed" for every other app. Only when it can also
+    /// see a built-in app is a "not installed" answer believable.
+    static let seesOtherApps: Bool = {
+        guard let m = method else { return false }
+        return ["com.apple.mobilesafari", "com.apple.Preferences", "com.apple.camera", "com.apple.mobileslideshow"].contains { m.check($0) == true }
+    }()
+
+    /// true = installed (always believable), false = not installed (only when iOS really answers about other
+    /// apps), nil = can't tell (then the app goes by what the server recorded when you installed through Mango).
     static func isInstalled(_ bundleId: String?) -> Bool? {
         guard let m = method, let id = bundleId, !id.isEmpty else { return nil }
-        return m.check(id)
+        if m.check(id) == true { return true }
+        return seesOtherApps ? false : nil
+    }
+
+    static var statusText: String {
+        guard let m = method else { return "iOS won't say" }
+        return seesOtherApps ? "Checked on this iPhone (\(m.name))" : "iOS only shows Mango itself"
     }
 
     /// The installed copy's version ("1.2.3"), if iOS says.

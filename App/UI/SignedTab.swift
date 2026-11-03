@@ -68,7 +68,7 @@ struct SignedTab: View {
     /// "What's on this iPhone" summary, like ESign's app list.
     @ViewBuilder
     var phoneCard: some View {
-        if DeviceApps.available {
+        if DeviceApps.seesOtherApps {
             let here = signed.filter { DeviceApps.isInstalled($0.bundleId) == true }
             let saving = local.saving.count
             HStack(spacing: 12) {
@@ -203,7 +203,7 @@ struct SignedRow: View {
         } else if phone.installed == true {
             b.append(Badge(text: phone.isSame(as: s.version) ? "✓ On this iPhone" : "On this iPhone · v\(phone.version ?? "?")", style: .good, small: true))
         } else if phone.installed == nil && s.onPhone == true {
-            b.append(Badge(text: "On your phone?", style: .good, small: true))
+            b.append(Badge(text: "On your phone", style: .good, small: true))
         }
         if let left = s.daysLeft {
             if left < 0 { b.append(Badge(text: "Cert expired", style: .bad, small: true)) }
