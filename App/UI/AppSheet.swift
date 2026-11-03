@@ -281,6 +281,7 @@ struct AppSheet: View {
 }
 
 /// "JIT · More RAM · 120Hz" — what an app's default settings turn on.
+@MainActor
 func defaultsSummary(_ d: SignDefaults, _ server: Server) -> [String] {
     var bits: [String] = []
     for p in SignPresets.ent where d.entitlements.contains(where: { $0.key == p.key }) { bits.append(p.short) }

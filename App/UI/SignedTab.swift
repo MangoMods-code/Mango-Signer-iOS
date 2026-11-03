@@ -215,8 +215,14 @@ struct SignedSheet: View {
         let o = s.options
         let tw = (o?.dylibs ?? []) + (o?.tweaks ?? [])
         if !tw.isEmpty { items.append(("Tweaks", tw.joined(separator: ", "))) }
-        let extras = (o?.entitlements ?? []).map { k in SignPresets.ent.first { $0.key == k }?.short ?? String(k.split(separator: ".").last ?? "") }
-            + (o?.plist ?? []).map { k in SignPresets.plist.first { $0.key == k }?.short ?? k }
+        var extras: [String] = []
+        for k in o?.entitlements ?? [] {
+            if let p = SignPresets.ent.first(where: { $0.key == k }) { extras.append(p.short) }
+            else { extras.append(k.components(separatedBy: ".").last ?? k) }
+        }
+        for k in o?.plist ?? [] {
+            if let p = SignPresets.plist.first(where: { $0.key == k }) { extras.append(p.short) } else { extras.append(k) }
+        }
         if !extras.isEmpty { items.append(("Changes", extras.joined(separator: ", "))) }
         return items
     }

@@ -2,6 +2,7 @@ import SwiftUI
 
 // MARK: - Filtering (same rules as the website)
 
+@MainActor
 enum Lib {
     static func matches(_ a: SApp, _ key: String, _ server: Server) -> Bool {
         switch key {
