@@ -1,0 +1,67 @@
+name: MangoSigner
+options:
+  bundleIdPrefix: com.mangomods
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  OpenSSL:
+    url: https://github.com/krzyzanowskim/OpenSSL
+    exactVersion: 3.6.5000
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  MangoSigner:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Engine
+      - path: ThirdParty/zsign/src
+        compilerFlags: ["-w"]
+      - path: Resources
+    dependencies:
+      - package: OpenSSL
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Mango Signer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: iOS App
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.apple.itunes.ipa]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.apple.itunes.ipa
+            UTTypeDescription: iOS App
+            UTTypeConformsTo: [public.data, public.zip-archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [ipa]
+          - UTTypeIdentifier: com.apple.mobileprovision
+            UTTypeDescription: Provisioning Profile
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [mobileprovision]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mangomods.mangosigner
+        PRODUCT_NAME: MangoSigner
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_OBJC_BRIDGING_HEADER: Engine/MangoSigner-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: gnu++17
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "ZSIGN_IOS=1"]
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/ThirdParty/zsign/src", "$(SRCROOT)/ThirdParty/zsign/src/common", "$(SRCROOT)/ThirdParty/zsign/src/third-party/zlib"]
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"

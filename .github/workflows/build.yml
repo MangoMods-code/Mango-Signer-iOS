@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: SourcePackages
+          key: spm-${{ hashFiles('project.yml') }}
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project MangoSigner.xcodeproj \
+            -scheme MangoSigner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -clonedSourcePackagesDirPath SourcePackages \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*MangoSigner/App|\*\* BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/MangoSigner.app
+
+      - name: Show errors
+        if: failure()
+        run: grep -E "error:" -A3 build.log | head -200 || true
+
+      - name: Package .ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/MangoSigner.app out/Payload/
+          cd out && zip -qry ../MangoSigner.ipa Payload
+          ls -la ../MangoSigner.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MangoSigner-ipa
+          path: MangoSigner.ipa
+
+      - name: Publish build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep MARKETING_VERSION project.yml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" MangoSigner.ipa --prerelease \
+            --title "Mango Signer ${VERSION} (build ${{ github.run_number }})" \
+            --notes "Unsigned build from commit ${GITHUB_SHA::7}. Sign it with your certificate (Mango Signer server, BuildBox, ESign…) and install."
