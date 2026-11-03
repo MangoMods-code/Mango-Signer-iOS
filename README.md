@@ -6,6 +6,8 @@ The on-device version of [Mango Signer](https://github.com/MangoMods-code/Mango-
 Early development. Builds are made automatically by GitHub Actions on every push and posted under **Releases** as an unsigned `.ipa`. Sign it once with your certificate (for example with your Mango Signer server) and install it.
 
 ## What works now
+- Connects to your Mango Signer server (built in), with the same App Library, signed apps, certificates, users and settings as the website
+- Owner and admins can manage the library from the iPhone: edit an app's name, category, tags, version, description, notes, icon and default sign settings, manage screenshots and collections, update the `.ipa`, add a newer version of a source app, move an app to GitHub storage, or delete it
 - Add `.ipa` files from Files or "Open in Mango Signer"
 - Add certificates (`.p12` + `.mobileprovision`); passwords are kept in the iPhone's Keychain
 - Sign on the iPhone with zsign: change name, bundle ID and version, inject `.dylib` tweaks, remove extensions or device limits, enable Files app access
