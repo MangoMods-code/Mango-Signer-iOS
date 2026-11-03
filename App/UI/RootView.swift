@@ -103,8 +103,12 @@ struct LoginScreen: View {
                     Button("Use a different server") { server.setServer(nil); error = nil }
                         .font(.footnote).foregroundStyle(Theme.muted)
                 }
-                if let error {
-                    Text(error).font(.subheadline).foregroundStyle(Theme.red).multilineTextAlignment(.center)
+                if let msg = error ?? (server.authed ? server.loadError : nil) {
+                    Text(msg).font(.subheadline).foregroundStyle(Theme.red).multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                    if server.authed {
+                        BigButton(title: "Try again", primary: false) { Task { await server.refresh() } }
+                    }
                 }
             }
             .padding(24)

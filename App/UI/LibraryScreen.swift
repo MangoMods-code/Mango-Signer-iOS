@@ -54,6 +54,16 @@ struct LibraryScreen: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: []) {
+                    if let e = server.loadError {
+                        Text(e).font(.footnote).foregroundStyle(Theme.red).padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 12))
+                            .textSelection(.enabled).padding(.bottom, 10)
+                    }
+                    if let n = server.state?.skipped, n > 0 {
+                        Text("\(n) app\(n == 1 ? "" : "s") couldn't be shown in the app yet.").font(.footnote).foregroundStyle(Theme.muted)
+                            .padding(.bottom, 8)
+                    }
                     if let a = server.state?.announcement?.text, !a.isEmpty {
                         Text(a).font(.subheadline).foregroundStyle(Theme.text).padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -84,7 +94,7 @@ struct LibraryScreen: View {
                     let list = filtered
                     if list.isEmpty {
                         EmptyState(icon: "magnifyingglass", title: search.isEmpty ? "Nothing here" : "No matches",
-                                   message: search.isEmpty ? "No apps in this group yet." : "Try a different search.")
+                                   message: search.isEmpty ? (apps.isEmpty ? "Your server sent no apps. Pull down to refresh." : "No apps in this group yet.") : "Try a different search.")
                     } else {
                         SectionTitle(text: filter == "all" ? "Recently updated" : chips.first { $0.id == filter }?.label ?? "Apps", count: list.count)
                         Card {

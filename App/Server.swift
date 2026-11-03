@@ -154,6 +154,19 @@ struct SAnnouncement: Decodable {
     var text: String?
 }
 
+/// Decodes one item of a list; an item that doesn't fit is skipped instead of breaking the whole list.
+struct Lossy<T: Decodable>: Decodable {
+    var value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+extension KeyedDecodingContainer {
+    func lossyList<T: Decodable>(_ key: Key) -> [T]? {
+        guard let items = try? decodeIfPresent([Lossy<T>].self, forKey: key) else { return nil }
+        return items.compactMap { $0.value }
+    }
+}
+
 struct ServerState: Decodable {
     var account: Account
     var apps: [SApp]
@@ -165,6 +178,27 @@ struct ServerState: Decodable {
     var settings: SSettings?
     var server: SServerInfo?
     var announcement: SAnnouncement?
+    var skipped = 0
+
+    enum CodingKeys: String, CodingKey {
+        case account, apps, categories, certs, signed, favorites, alerts, settings, server, announcement
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        account = try c.decode(Account.self, forKey: .account)
+        let rawApps = (try? c.decodeIfPresent([Lossy<SApp>].self, forKey: .apps)) ?? []
+        apps = rawApps.compactMap { $0.value }
+        skipped = rawApps.count - apps.count
+        categories = c.lossyList(.categories)
+        certs = c.lossyList(.certs)
+        signed = c.lossyList(.signed)
+        favorites = c.lossyList(.favorites)
+        alerts = c.lossyList(.alerts)
+        settings = try? c.decodeIfPresent(SSettings.self, forKey: .settings)
+        server = try? c.decodeIfPresent(SServerInfo.self, forKey: .server)
+        announcement = try? c.decodeIfPresent(SAnnouncement.self, forKey: .announcement)
+    }
 }
 
 struct SessionInfo: Decodable {
@@ -250,6 +284,8 @@ final class Server: ObservableObject {
     @Published var authed = false
     @Published var checking = true
     @Published var tasks: [TaskInfo] = []
+    /// Why the library couldn't be loaded (shown on screen instead of failing quietly).
+    @Published var loadError: String?
 
     var account: Account? { state?.account }
     var isOwner: Bool { account?.isOwner == true }
@@ -360,10 +396,27 @@ final class Server: ObservableObject {
     @discardableResult
     func refresh() async -> String? {
         do {
-            state = try await get("/api/state")
-            return nil
+            let d = try await data("GET", "/api/state")
+            do {
+                state = try JSONDecoder().decode(ServerState.self, from: d)
+                loadError = nil
+            } catch {
+                loadError = "The app couldn't read your server's library (\(Server.describe(error))). Make sure the server is up to date."
+            }
         } catch {
-            return error.localizedDescription
+            loadError = error.localizedDescription
+        }
+        return loadError
+    }
+
+    static func describe(_ error: Error) -> String {
+        guard let e = error as? DecodingError else { return error.localizedDescription }
+        func path(_ c: DecodingError.Context) -> String { c.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: ".") }
+        switch e {
+        case .keyNotFound(let k, let c): return "missing \(k.stringValue) at \(path(c))"
+        case .typeMismatch(_, let c), .valueNotFound(_, let c): return "unexpected value at \(path(c))"
+        case .dataCorrupted(let c): return "unreadable data at \(path(c))"
+        @unknown default: return "unreadable data"
         }
     }
 
