@@ -91,13 +91,13 @@ struct ResignAllSheet: View {
     /// One row per app: your newest signed copy of each app that's still in the library or your Apps tab.
     var items: [(signed: SSigned, app: SApp)] {
         var seen = Set<String>()
-        var out: [(SSigned, SApp)] = []
+        var out: [(signed: SSigned, app: SApp)] = []
         for s in server.state?.signed ?? [] {
             guard let aid = s.appId, !seen.contains(aid), let a = server.app(aid) else { continue }
             seen.insert(aid)
-            out.append((s, a))
+            out.append((signed: s, app: a))
         }
-        return out.sorted { (parseDate($0.0.expires) ?? .distantFuture) < (parseDate($1.0.expires) ?? .distantFuture) }
+        return out.sorted { (parseDate($0.signed.expires) ?? .distantFuture) < (parseDate($1.signed.expires) ?? .distantFuture) }
     }
 
     var body: some View {
@@ -185,8 +185,8 @@ struct ResignAllSheet: View {
                     let r = try await server.post("/api/sign", body)
                     guard let job = r["jobId"] as? String else { throw MangoError("The server didn't start signing.") }
                     let res = try await server.waitJob(job) { _, _ in }
-                    let sid = (res["signed"] as? [String: Any])?["id"] as? String
-                        ?? ((try? await server.get("/api/jobs/\(job)", as: JobStatus.self))?.result?.signed?.id)
+                    var sid = (res["signed"] as? [String: Any])?["id"] as? String
+                    if sid == nil { sid = (try? await server.get("/api/jobs/\(job)", as: JobStatus.self))?.result?.signed?.id }
                     await server.refresh()
                     phases[it.app.id] = sid.map { .done($0) } ?? .failed("Signed, but it didn't come back. Check the Signed tab.")
                 } catch {
@@ -240,7 +240,6 @@ enum CertReminders {
 
 // MARK: - Face ID lock
 
-@MainActor
 final class AppLock: ObservableObject {
     static let shared = AppLock()
     @Published var locked = false

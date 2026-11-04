@@ -104,11 +104,14 @@ final class BackgroundUploader: NSObject, URLSessionDataDelegate {
         if let c = job?.continuation {
             if let error { c.resume(throwing: error) } else { c.resume() }
         }
-        if error == nil, let job, UIApplication.shared.applicationState != .active {
-            let n = UNMutableNotificationContent()
-            n.title = "✅ \(job.name) is uploaded"
-            n.body = "Open Mango Signer to keep going."
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "upload-\(uid)", content: n, trigger: nil))
+        if error == nil, let name = job?.name {
+            DispatchQueue.main.async {
+                guard UIApplication.shared.applicationState != .active else { return }
+                let n = UNMutableNotificationContent()
+                n.title = "✅ \(name) is uploaded"
+                n.body = "Open Mango Signer to keep going."
+                UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "upload-\(uid)", content: n, trigger: nil))
+            }
         }
     }
 
