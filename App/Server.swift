@@ -918,7 +918,17 @@ final class Server: ObservableObject {
 
     // MARK: session
 
+    private var sessionCheck: Task<Void, Never>?
+    /// One check at a time (a second call waits for the first), and it isn't stopped if the screen changes.
     func checkSession() async {
+        if let running = sessionCheck { await running.value; return }
+        let t = Task { await runSessionCheck() }
+        sessionCheck = t
+        await t.value
+        sessionCheck = nil
+    }
+
+    private func runSessionCheck() async {
         checking = true
         defer { checking = false }
         guard baseURL != nil else { authed = false; return }

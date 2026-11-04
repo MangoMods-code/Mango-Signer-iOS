@@ -35,7 +35,9 @@ struct RootView: View {
     }
 
     var body: some View {
-        Group {
+        // A ZStack (not a Group) so the tasks below belong to this screen as a whole. On a Group they'd run
+        // again every time it switches between loading and sign-in, and the session check would loop forever.
+        ZStack {
             if server.checking && server.state == nil && server.baseURL != nil {
                 VStack(spacing: 16) {
                     Image("Logo").resizable().frame(width: 84, height: 84)
