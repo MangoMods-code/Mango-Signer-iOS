@@ -223,7 +223,7 @@ struct LoginScreen: View {
                     Button("Use a different server") { server.setServer(nil); error = nil }
                         .font(.footnote).foregroundStyle(Theme.muted)
                 }
-                if let msg = error ?? (server.authed ? server.loadError : nil) {
+                if let msg = error ?? (server.authed ? server.loadError : server.autoLoginError) {
                     Text(msg).font(.subheadline).foregroundStyle(Theme.red).multilineTextAlignment(.center)
                         .textSelection(.enabled)
                     if server.authed {
@@ -236,7 +236,7 @@ struct LoginScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .task {
             // Signed out while using the app (the session ran out): sign straight back in if the login is saved.
-            if server.baseURL != nil && server.savedLogin != nil && !server.checking { await server.checkSession() }
+            if server.baseURL != nil && server.savedLogin != nil && !server.checking && server.mayAutoLogin { await server.checkSession() }
         }
     }
 

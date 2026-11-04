@@ -935,12 +935,23 @@ final class Server: ObservableObject {
         if let s: SessionInfo = try? await get("/api/session"), s.authed {
             authed = true
             await refresh()
-        } else if let saved = savedLogin, (try? await login(username: saved.0, password: saved.1)) != nil {
-            // Signed out (new install, or the session ran out): sign back in with the saved login.
+        } else if let saved = savedLogin, mayAutoLogin {
+            // Signed out (new install, or the session ran out): sign back in with the saved login, at most once a
+            // minute. If it doesn't work (password changed, or the server says too many tries), say why and stop.
+            lastAutoLogin = Date()
+            do { try await login(username: saved.0, password: saved.1); autoLoginError = nil } catch {
+                authed = false
+                autoLoginError = "Couldn't sign you back in automatically: \(error.localizedDescription)"
+            }
         } else {
             authed = false
         }
     }
+
+    private var lastAutoLogin = Date.distantPast
+    /// Why the automatic sign-in didn't work (shown on the sign-in screen).
+    @Published var autoLoginError: String?
+    var mayAutoLogin: Bool { Date().timeIntervalSince(lastAutoLogin) > 60 }
 
     /// Puts a signed app's file back on the server from the copy on this iPhone, so it can be installed again.
     func restoreSigned(_ s: SSigned, from copy: SignedApp) async throws -> SSigned? {
