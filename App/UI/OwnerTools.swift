@@ -568,7 +568,7 @@ struct AddAppSheet: View {
         status = "Uploading…"; progress = 0
         Task {
             do {
-                let uid = try await server.uploadLarge(u) { p, line in progress = p; status = line }
+                let uid = try await server.uploadLarge(u, background: true, name: u.deletingPathExtension().lastPathComponent) { p, line in progress = p; status = line }
                 status = "Reading app info…"; progress = nil
                 var r = try await server.post("/api/apps", ["uploadId": uid, "fileName": u.lastPathComponent])
                 if let job = r["jobId"] as? String { r = try await server.waitJob(job) { p, l in progress = p; status = p != nil ? "Saving to GitHub \(Int((p ?? 0) * 100))%" : l } }

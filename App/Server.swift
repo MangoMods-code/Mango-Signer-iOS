@@ -1288,7 +1288,9 @@ final class Server: ObservableObject {
 
     /// Uploads a big file (an .ipa) in 8 MB pieces, a few at a time, retrying pieces if the connection drops —
     /// the same way the website does. Small files go up in one go. Returns the upload id.
-    func uploadLarge(_ fileURL: URL, purpose: String? = nil, progress: @escaping @MainActor (Double, String) -> Void) async throws -> String {
+    /// background: big files keep uploading when you leave the app (iOS background transfers).
+    func uploadLarge(_ fileURL: URL, purpose: String? = nil, background: Bool = false, name: String = "Your app",
+                     progress: @escaping @MainActor (Double, String) -> Void) async throws -> String {
         let scoped = fileURL.startAccessingSecurityScopedResource()
         defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
         let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
@@ -1306,6 +1308,10 @@ final class Server: ObservableObject {
         guard let uid = start["uploadId"] as? String else { throw MangoError("The server didn't start the upload. Try again.") }
         let piece = (start["chunkSize"] as? NSNumber)?.int64Value ?? chunk
         let count = (start["count"] as? NSNumber)?.intValue ?? Int((size + piece - 1) / piece)
+        if background, count > 2, let base = baseURL {
+            try await BackgroundUploader.shared.upload(fileURL, uid: uid, pieceSize: piece, count: count, base: base, name: name, progress: progress)
+            return uid
+        }
         let began = Date()
         final class Tally: @unchecked Sendable { var sent: Int64 = 0; var next = 0; let lock = NSLock() }
         let tally = Tally()

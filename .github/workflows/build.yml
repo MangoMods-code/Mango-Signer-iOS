@@ -42,6 +42,7 @@ jobs:
             build 2>&1 | tee build.log | grep -E "error:|warning: .*MangoSigner/App|\*\* BUILD" || true
           # The app must really contain its program (a failed compile can still leave an empty .app folder).
           test -f build/Build/Products/Release-iphoneos/MangoSigner.app/MangoSigner
+          ls build/Build/Products/Release-iphoneos/MangoSigner.app/PlugIns || true
 
       - name: Publish the errors
         if: failure()

@@ -3,6 +3,7 @@ import UIKit
 
 @main
 struct MangoSignerApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var server = Server()
     @StateObject private var local = LocalStore()
     @StateObject private var router = Router()
@@ -61,7 +62,15 @@ struct RootView: View {
         }
         .onChange(of: phase) { p in
             if p == .background { AppLock.shared.wentAway() }
-            if p == .active { AppLock.shared.cameBack() }
+            if p == .active {
+                AppLock.shared.cameBack()
+                // A link shared from Safari while Mango Signer couldn't be opened.
+                if let l = SharedLink.take(), server.authed, router.route != .importLink {
+                    router.pendingLink = l
+                    router.tab = .apps
+                    router.open(.importLink)
+                }
+            }
             if p == .active && server.authed {
                 Task {
                     await server.refresh()
@@ -75,7 +84,8 @@ struct RootView: View {
         .onOpenURL { url in
             if url.scheme == "mangosigner" {
                 let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value
-                if url.host == "import", let link, !link.isEmpty {
+                if url.host == "import", let link, !link.isEmpty, router.route != .importLink {
+                    _ = SharedLink.take()
                     router.pendingLink = link
                     router.tab = .apps
                     router.open(.importLink)
@@ -101,6 +111,11 @@ struct MainShell: View {
     @EnvironmentObject var router: Router
 
     var owner: Bool { server.isStaff }
+    /// Changes when what the Home Screen widget shows changes.
+    var widgetKey: String {
+        let signed = server.state?.signed ?? []
+        return "\(server.defaultCert?.id ?? "")|\(server.defaultCert?.daysLeft ?? 0)|\(signed.count)|\(signed.first?.id ?? "")|\(updates)"
+    }
     /// Changes when certificates are added, removed or renewed, so reminders are set up again.
     var reminderKey: String {
         let ids: [String] = server.certs.map { c in c.id + String(c.daysLeft ?? 0) }
@@ -145,6 +160,7 @@ struct MainShell: View {
         .task(id: reminderKey) {
             CertReminders.schedule(server: server, local: local)
         }
+        .task(id: widgetKey) { WidgetSync.save(server: server) }
         .task {
             await server.syncWithDevice(force: true)
             await local.saveMissingCopies(server: server)

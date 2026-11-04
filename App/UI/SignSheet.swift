@@ -419,6 +419,8 @@ struct SigningSheet: View {
     @State private var failure: String?
     @State private var jobId: String?
     @State private var started = false
+    @State private var live = LiveProgress()
+    @State private var inBackground = false
 
     var body: some View {
         SheetScroll {
@@ -450,14 +452,24 @@ struct SigningSheet: View {
             router.locked = true
             UIApplication.shared.isIdleTimerDisabled = true
             defer { UIApplication.shared.isIdleTimerDisabled = false }
+            live.start(app: run.app.name, title: "Signing \(run.app.name)")
             do {
                 if run.local != nil { try await signHere() } else { try await signOnServer() }
+                live.end(title: "\(run.app.name) is ready", detail: "Open Mango Signer to install it")
             } catch {
                 router.locked = false
-                if Task.isCancelled || error is CancellationError { return }
+                if Task.isCancelled || error is CancellationError {
+                    if inBackground { live.end(title: "Signing \(run.app.name) on your server", detail: "You'll get an alert when it's ready") }
+                    else { live.end(title: "Signing cancelled", detail: run.app.name, failed: true) }
+                    return
+                }
                 Haptics.failure()
                 failure = error.localizedDescription
+                live.end(title: "Signing \(run.app.name) failed", detail: error.localizedDescription, failed: true)
             }
+        }
+        .onChange(of: "\(title)|\(sub)|\(progress ?? -1)") { _ in
+            if failure == nil { live.update(title: title, detail: sub.isEmpty ? run.app.name : sub, progress: progress) }
         }
     }
 
@@ -480,6 +492,7 @@ struct SigningSheet: View {
     /// Signing runs on the server anyway: close this screen and get an alert when it's ready.
     func goBackground() {
         guard let jobId else { return }
+        inBackground = true
         Task { _ = try? await server.post("/api/jobs/\(jobId)/notify") }
         router.close()
         router.say("Signing \(run.app.name) in the background — you'll get an alert when it's ready")
@@ -502,7 +515,7 @@ struct SigningSheet: View {
         if let f = run.app.localFile {
             // Saved on this iPhone: send it to your account first (it shows in the Apps tab on the website too).
             title = "Uploading \(run.app.name)…"; sub = "Keep this screen open"; progress = 0
-            let uid = try await server.uploadLarge(f, purpose: "ipa") { p, line in progress = p; sub = line }
+            let uid = try await server.uploadLarge(f, purpose: "ipa", background: true, name: run.app.name) { p, line in progress = p; sub = line }
             title = "Reading app info…"; sub = ""; progress = nil
             let r = try await server.post("/api/imports", ["uploadId": uid, "fileName": run.app.fileName ?? f.lastPathComponent])
             guard let impId = (r["import"] as? [String: Any])?["id"] as? String else { throw MangoError("The server didn't save the app. Try again.") }

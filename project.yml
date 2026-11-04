@@ -23,8 +23,11 @@ targets:
       - path: ThirdParty/zsign/src
         compilerFlags: ["-w"]
       - path: Resources
+      - path: Shared
     dependencies:
       - package: OpenSSL
+      - target: MangoWidgets
+      - target: MangoShare
     info:
       path: App/Info.plist
       properties:
@@ -34,6 +37,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIFileSharingEnabled: true
+        NSSupportsLiveActivities: true
         NSFaceIDUsageDescription: Mango Signer uses Face ID to lock the app, since it holds your certificates.
         CFBundleURLTypes:
           - CFBundleURLName: com.mangomods.mangosigner
@@ -67,6 +71,60 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: gnu++17
         GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "ZSIGN_IOS=1"]
         HEADER_SEARCH_PATHS: ["$(SRCROOT)/ThirdParty/zsign/src", "$(SRCROOT)/ThirdParty/zsign/src/common", "$(SRCROOT)/ThirdParty/zsign/src/third-party/zlib"]
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+
+  MangoWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: Widgets
+      - path: Shared
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Mango Signer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mangomods.mangosigner.widgets
+        PRODUCT_NAME: MangoWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+  MangoShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Share
+      - path: Shared
+    info:
+      path: Share/Info.plist
+      properties:
+        CFBundleDisplayName: Mango Signer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mangomods.mangosigner.share
+        PRODUCT_NAME: MangoShare
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
