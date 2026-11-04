@@ -131,6 +131,7 @@ final class Router: ObservableObject {
 
     /// "Get": installs a matching signed copy right away, or signs with the app's default settings.
     func quickGet(_ app: SApp, server: Server, versionIndex: Int = 0) {
+        Haptics.tap()
         guard !server.certs.isEmpty else {
             go(.certs)
             say("Add your certificate first")
@@ -151,6 +152,13 @@ final class Router: ObservableObject {
         Task { _ = try? await server.post("/api/signed/\(s.id)/install") }
         open(.install(s.id))
     }
+}
+
+/// Little taps you feel: a light one when you press Get, a success buzz when an app is signed.
+enum Haptics {
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func failure() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
 }
 
 /// The scrolling body every sheet uses.

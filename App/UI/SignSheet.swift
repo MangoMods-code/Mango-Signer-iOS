@@ -451,6 +451,7 @@ struct SigningSheet: View {
             } catch {
                 router.locked = false
                 if Task.isCancelled || error is CancellationError { return }
+                Haptics.failure()
                 failure = error.localizedDescription
             }
         }
@@ -517,6 +518,7 @@ struct SigningSheet: View {
                 guard let s = j.result?.signed else { throw MangoError("Signing finished but the server didn't send the app back.") }
                 router.signedCache[s.id] = s
                 router.locked = false
+                Haptics.success()
                 await server.refresh()
                 if LocalStore.keepCopies { let l = local, srv = server; Task { try? await l.saveCopy(s, server: srv) } }
                 Task { await server.syncWithDevice(force: true) }
@@ -545,6 +547,7 @@ struct SigningSheet: View {
         let s = try await local.signFile(file, name: run.app.name, bundleId: run.app.bundleId ?? "", version: version,
                                          icon: iconData, with: cert, options: plan.options)
         router.locked = false
+        Haptics.success()
         router.open(.readyLocal(s.id))
     }
 }
