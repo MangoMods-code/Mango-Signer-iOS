@@ -124,7 +124,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.mangomods.mangosigner.share
         PRODUCT_NAME: MangoShare
         TARGETED_DEVICE_FAMILY: "1,2"
-        APPLICATION_EXTENSION_API_ONLY: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""

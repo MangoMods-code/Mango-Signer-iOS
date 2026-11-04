@@ -69,10 +69,14 @@ final class ShareViewController: UIViewController {
 
     /// Share extensions can't open apps directly, but the app hosting the share sheet can.
     private func openApp(_ url: URL) -> Bool {
+        // UIApplication's open(_:options:completionHandler:) is called by name, since extensions can't use it directly.
+        let sel = NSSelectorFromString("openURL:options:completionHandler:")
         var r: UIResponder? = self
         while let cur = r {
-            if let app = cur as? UIApplication {
-                app.open(url, options: [:], completionHandler: nil)
+            if NSStringFromClass(type(of: cur)).contains("Application"), cur.responds(to: sel) {
+                typealias OpenFn = @convention(c) (AnyObject, Selector, NSURL, NSDictionary, AnyObject?) -> Void
+                let fn = unsafeBitCast(cur.method(for: sel), to: OpenFn.self)
+                fn(cur, sel, url as NSURL, NSDictionary(), nil)
                 return true
             }
             r = cur.next
