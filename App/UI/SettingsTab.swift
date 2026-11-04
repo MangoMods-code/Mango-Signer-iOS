@@ -7,6 +7,8 @@ struct SettingsTab: View {
     @State private var confirmLogout = false
     @AppStorage("keepSignedCopies") private var keepCopies = true
     @AppStorage("keepImports") private var keepImports = true
+    @AppStorage("certReminders") private var reminders = false
+    @AppStorage("faceIDLock") private var faceLock = false
 
     var settings: SSettings? { server.state?.settings }
     var info: SServerInfo? { server.state?.server }
@@ -40,6 +42,13 @@ struct SettingsTab: View {
         Task {
             do { try await server.post("/api/settings", body, method: "PATCH"); await server.refresh(); router.say(msg) } catch { router.say(error.localizedDescription) }
         }
+    }
+
+    /// How many apps are in the library more than once (same bundle ID).
+    var duplicateCount: Int {
+        var seen: [String: Int] = [:]
+        for a in server.state?.apps ?? [] where a.missing != true { if let b = a.bundleId?.lowercased(), !b.isEmpty { seen[b, default: 0] += 1 } }
+        return seen.values.filter { $0 > 1 }.count
     }
 
     func website(_ what: String) {
@@ -103,11 +112,13 @@ struct SettingsTab: View {
         ListBox {
             ValueRow(title: "Apps", value: "\(apps.count) (\(apps.filter { $0.published != false }.count) shown)")
             RowLine()
-            LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { website("Categories") }
+            LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { router.open(.categories) }
             RowLine()
-            LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { website("Tweaks") }
+            LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { router.open(.tweaksLib) }
             RowLine()
-            LinkRow(title: "📣 Announcement", value: (server.state?.announcement?.text ?? "").isEmpty ? "Off" : "On") { website("Announcements") }
+            LinkRow(title: "🔁 Duplicates", value: duplicateCount == 0 ? "None" : "\(duplicateCount)") { router.open(.duplicates) }
+            RowLine()
+            LinkRow(title: "📣 Announcement", value: (server.state?.announcement?.text ?? "").isEmpty ? "Off" : "On") { router.open(.announcement) }
             RowLine()
             ValueRow(title: "Your signed apps", value: "\(server.state?.signed?.count ?? 0)")
             RowLine()
@@ -116,11 +127,11 @@ struct SettingsTab: View {
 
         SectionTitle(text: "Owner tools")
         ListBox {
-            LinkRow(title: "📊 Stats & activity") { website("Stats") }
+            LinkRow(title: "📊 Stats & activity") { router.open(.stats) }
             RowLine()
-            LinkRow(title: "📣 Message everyone") { website("Messages") }
+            LinkRow(title: "📣 Message everyone") { router.open(.broadcast) }
             RowLine()
-            LinkRow(title: "💾 Backup & restore", value: settings?.lastBackup.map { ago($0) } ?? "never") { website("Backups") }
+            LinkRow(title: "💾 Backup & restore", value: settings?.lastBackup.map { ago($0) } ?? "never") { router.open(.backup) }
         }
     }
 
@@ -197,14 +208,16 @@ struct SettingsTab: View {
         ListBox {
             ValueRow(title: "Apps", value: "\(apps.count) (\(apps.filter { $0.published != false }.count) shown)")
             RowLine()
-            LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { website("Categories") }
+            LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { router.open(.categories) }
             RowLine()
-            LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { website("Tweaks") }
+            LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { router.open(.tweaksLib) }
+            RowLine()
+            LinkRow(title: "🔁 Duplicates", value: duplicateCount == 0 ? "None" : "\(duplicateCount)") { router.open(.duplicates) }
         }
         CloudSection()
         SectionTitle(text: "Tools")
         ListBox {
-            LinkRow(title: "📊 Stats & activity") { website("Stats") }
+            LinkRow(title: "📊 Stats & activity") { router.open(.stats) }
             RowLine()
             LinkRow(title: "🛡 Security log") { router.open(.securityLog) }
         }
@@ -287,12 +300,32 @@ struct SettingsTab: View {
 
     @ViewBuilder
     var phoneSection: some View {
+        SectionTitle(text: "App icon")
+        AppIconPicker()
         SectionTitle(text: "This app")
         ListBox {
             ToggleRow(title: "Save signed apps on this iPhone", sub: "Like ESign: everything you sign is kept here too, so it can always be installed again or shared",
                       isOn: Binding(get: { keepCopies }, set: { v in
                           keepCopies = v
                           if v { Task { await local.saveMissingCopies(server: server) } }
+                      }))
+            RowLine()
+            ToggleRow(title: "Certificate reminders", sub: "A notification a week and a day before a certificate expires",
+                      isOn: Binding(get: { reminders }, set: { v in
+                          if v {
+                              Task {
+                                  let ok = await CertReminders.enable()
+                                  reminders = ok
+                                  if ok { CertReminders.schedule(server: server, local: local); router.say("You'll get a reminder before certificates expire") }
+                                  else { router.say("Allow notifications for Mango Signer in the Settings app first") }
+                              }
+                          } else { reminders = false; CertReminders.schedule(server: server, local: local) }
+                      }))
+            RowLine()
+            ToggleRow(title: "Lock with \(AppLock.methodName)", sub: "Asks for \(AppLock.methodName) when you open Mango Signer, since it holds your certificates",
+                      isOn: Binding(get: { faceLock }, set: { v in
+                          if v { Task { if await AppLock.shared.turnOn() { faceLock = true; router.say("Locked with \(AppLock.methodName) 🔒") } } }
+                          else { faceLock = false; AppLock.shared.locked = false }
                       }))
             RowLine()
             ToggleRow(title: "Keep imported apps on this iPhone", sub: "Apps you import in the Apps tab stay here after you sign them, so you can sign them again any time. Off = removed once they're signed.",

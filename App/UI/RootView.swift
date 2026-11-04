@@ -17,6 +17,7 @@ struct MangoSignerApp: App {
                 .environmentObject(router)
                 .tint(Theme.mango)
                 .preferredColorScheme(.dark)
+                .lockOverlay()
         }
     }
 }
@@ -59,6 +60,8 @@ struct RootView: View {
             await local.syncAccountCerts(server: server)
         }
         .onChange(of: phase) { p in
+            if p == .background { AppLock.shared.wentAway() }
+            if p == .active { AppLock.shared.cameBack() }
             if p == .active && server.authed {
                 Task {
                     await server.refresh()
@@ -68,7 +71,17 @@ struct RootView: View {
             }
         }
         // "Open in Mango Signer": .ipa files go to the Apps tab, ready to sign.
+        // mangosigner://import?url=… (from the share sheet or Shortcuts) downloads a link the same way.
         .onOpenURL { url in
+            if url.scheme == "mangosigner" {
+                let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "url" }?.value
+                if url.host == "import", let link, !link.isEmpty {
+                    router.pendingLink = link
+                    router.tab = .apps
+                    router.open(.importLink)
+                }
+                return
+            }
             guard url.pathExtension.lowercased() == "ipa" else { return }
             Task {
                 do {
@@ -88,6 +101,11 @@ struct MainShell: View {
     @EnvironmentObject var router: Router
 
     var owner: Bool { server.isStaff }
+    /// Changes when certificates are added, removed or renewed, so reminders are set up again.
+    var reminderKey: String {
+        let ids: [String] = server.certs.map { c in c.id + String(c.daysLeft ?? 0) }
+        return ids.joined(separator: ",") + "|" + String(local.ownCerts.count)
+    }
     var updates: Int { (server.state?.apps ?? []).filter { $0.hasUpdate }.count }
     var certWarn: Bool { server.certs.contains { $0.check?.status == "revoked" || ($0.daysLeft ?? 99) < 7 } }
     var pending: Int { (server.state?.requests ?? []).filter { $0.status == "pending" }.count + (server.state?.bugs ?? []).filter { $0.status == "open" }.count }
@@ -97,7 +115,7 @@ struct MainShell: View {
             TabPage(title: "Your Apps", plus: { router.importTick += 1 }) { AppsTab() }
                 .tabItem { Label("Apps", systemImage: "square.and.arrow.down.fill") }
                 .tag(AppTab.apps)
-            TabPage(title: owner ? "Library" : "App Library", plus: owner ? openWebsite : nil) { LibraryTab() }
+            TabPage(title: owner ? "Library" : "App Library", plus: owner ? { router.open(.addApp) } : nil) { LibraryTab() }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
                 .badge(updates)
                 .tag(AppTab.library)
@@ -124,6 +142,9 @@ struct MainShell: View {
         .toast($router.toast)
         .onAppear { router.certsInSettings = owner }
         .onChange(of: owner) { v in router.certsInSettings = v; if v && router.tab == .certs { router.tab = .settings } }
+        .task(id: reminderKey) {
+            CertReminders.schedule(server: server, local: local)
+        }
         .task {
             await server.syncWithDevice(force: true)
             await local.saveMissingCopies(server: server)

@@ -21,6 +21,10 @@ struct AppsTab: View {
                 FilePickButtonLabel(icon: "plus", title: "Import an .ipa", sub: "From Files, iCloud Drive or Downloads. Only you can see apps you import.")
             }
             .buttonStyle(.plain)
+            Button { router.open(.importLink) } label: {
+                FilePickButtonLabel(icon: "link", title: "Import from a link", sub: "Paste a direct .ipa link and it downloads to this iPhone.")
+            }
+            .buttonStyle(.plain).padding(.top, 10)
             if importing > 0 {
                 HStack(spacing: 10) {
                     ProgressView().tint(Theme.mango)

@@ -71,6 +71,17 @@ enum Route: Identifiable, Equatable {
     case jobRun(String, String, String)
     case signLocal(UUID)
     case certsList
+    case categories
+    case editCollection(String?)
+    case tweaksLib
+    case stats
+    case duplicates
+    case addApp
+    case announcement
+    case broadcast
+    case backup
+    case importLink
+    case resignAll
 
     var id: String {
         switch self {
@@ -120,6 +131,17 @@ enum Route: Identifiable, Equatable {
         case .jobRun(_, let job, _): return "jobRun-\(job)"
         case .signLocal(let id): return "signLocal-\(id)"
         case .certsList: return "certsList"
+        case .categories: return "categories"
+        case .editCollection(let id): return "editCollection-\(id ?? "new")"
+        case .tweaksLib: return "tweaksLib"
+        case .stats: return "stats"
+        case .duplicates: return "duplicates"
+        case .addApp: return "addApp"
+        case .announcement: return "announcement"
+        case .broadcast: return "broadcast"
+        case .backup: return "backup"
+        case .importLink: return "importLink"
+        case .resignAll: return "resignAll"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -147,6 +169,8 @@ final class Router: ObservableObject {
     func say(_ message: String) { toast = message }
     /// Taps "+" on the Apps tab (opens the file picker there).
     @Published var importTick = 0
+    /// A link shared to Mango Signer (from Safari or the share sheet), picked up by the import screen.
+    var pendingLink: String?
     /// For you and admins the Certificates tab lives in Settings (five tabs fit), so it opens as a sheet.
     var certsInSettings = false
     func go(_ tab: AppTab) {
@@ -263,11 +287,23 @@ struct SheetHost: View {
                     SheetScroll { WebEmpty(icon: "questionmark.app", title: "App deleted", text: "That app isn't on this iPhone anymore. Import it again.") }
                 }
             case .certsList: CertsListSheet()
+            case .categories: CategoriesSheet()
+            case .editCollection(let id): CollectionEditSheet(collectionId: id)
+            case .tweaksLib: TweaksSheet()
+            case .stats: StatsSheet()
+            case .duplicates: DuplicatesSheet()
+            case .addApp: AddAppSheet()
+            case .announcement: AnnouncementSheet()
+            case .broadcast: BroadcastSheet()
+            case .backup: BackupSheet()
+            case .importLink: ImportLinkSheet()
+            case .resignAll: ResignAllSheet()
             case nil: Theme.card.ignoresSafeArea()
             }
         }
         .id(router.route?.id ?? "none")
         .toast($router.toast)
+        .lockOverlay()
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(router.locked)
         .tint(Theme.mango)

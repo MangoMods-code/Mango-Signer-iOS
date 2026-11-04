@@ -39,6 +39,12 @@ struct SignedTab: View {
                          button: "Go to \(server.isStaff ? "Library" : "App Library")") { router.tab = .library }
             } else {
                 phoneCard
+                if !signed.isEmpty {
+                    Button { router.open(.resignAll) } label: {
+                        FilePickButtonLabel(icon: "arrow.triangle.2.circlepath", title: "Re-sign all", sub: "New certificate, or yours is about to expire? Sign everything again in one go.")
+                    }
+                    .buttonStyle(.plain).padding(.bottom, 10)
+                }
                 let notes = notesText
                 if !notes.isEmpty { Hint(text: notes).padding(.bottom, 4) }
                 let ready = signed.filter { $0.fileAvailable == true || local.copy(of: $0.id) != nil }

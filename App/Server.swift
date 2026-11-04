@@ -342,8 +342,10 @@ struct SCollection: Decodable, Identifiable {
     var name: String
     var emoji: String?
     var appIds: [String]
+    var description: String?
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
+        description = c.str("description")
         id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? ""; emoji = c.str("emoji"); appIds = c.strings("appIds") ?? []
     }
 }
@@ -500,12 +502,22 @@ struct SSettings: Decodable {
     var deleteAfterInstall: Bool?
     var udidLogin: Bool?
     var lastBackup: String?
+    var catRules: [SCatRule] = []
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
+        catRules = c.list("catRules") ?? []
         signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday"); everyoneSignsPerDay = c.int("everyoneSignsPerDay"); maxSignedPerUser = c.int("maxSignedPerUser")
         signedRetentionDays = c.int("signedRetentionDays"); signedOnGithub = c.bool("signedOnGithub"); zipLevel = c.int("zipLevel")
         deleteAfterInstall = c.bool("deleteAfterInstall"); udidLogin = c.bool("udidLogin"); lastBackup = c.str("lastBackup")
     }
+}
+
+/// "Apps whose name mentions these words go in this category" (owner's auto-sort rules).
+struct SCatRule: Decodable {
+    var words: String
+    var categoryId: String?
+    init(from decoder: Decoder) throws { let c = try keyed(decoder); words = c.str("words") ?? ""; categoryId = c.str("categoryId") }
+    init(words: String, categoryId: String?) { self.words = words; self.categoryId = categoryId }
 }
 
 struct SStorage: Decodable {
@@ -539,9 +551,10 @@ struct SServerInfo: Decodable {
 
 struct SAnnouncement: Decodable {
     var text: String?
+    var style: String?
     init(from decoder: Decoder) throws {
         if let s = try? decoder.singleValueContainer().decode(String.self) { text = s; return }
-        text = try keyed(decoder).str("text")
+        text = try keyed(decoder).str("text"); style = try keyed(decoder).str("style")
     }
 }
 
@@ -556,8 +569,11 @@ struct STweak: Decodable, Identifiable {
     var description: String?
     var warnings: [String]
     var files: [STweakFile]
+    var author: String?
+    var published = true
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
+        author = c.str("author"); published = c.bool("published") ?? true
         id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "Tweak"; version = c.str("version"); description = c.str("description")
         warnings = c.strings("warnings") ?? []; files = c.list("files") ?? []
     }
