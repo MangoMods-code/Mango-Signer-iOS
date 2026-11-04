@@ -67,14 +67,14 @@ struct RootView: View {
                 }
             }
         }
-        // "Open in Mango Signer": .ipa files go to the apps kept on this iPhone.
+        // "Open in Mango Signer": .ipa files go to the Apps tab, ready to sign.
         .onOpenURL { url in
             guard url.pathExtension.lowercased() == "ipa" else { return }
             Task {
                 do {
                     let a = try await local.importIPA(url)
-                    router.say("Added \(a.name) to this iPhone")
-                    router.open(.localApps)
+                    router.tab = .apps
+                    router.open(.signLocal(a.id))
                 } catch { router.say(error.localizedDescription) }
             }
         }
@@ -94,17 +94,22 @@ struct MainShell: View {
 
     var body: some View {
         TabView(selection: $router.tab) {
+            TabPage(title: "Your Apps", plus: { router.importTick += 1 }) { AppsTab() }
+                .tabItem { Label("Apps", systemImage: "square.and.arrow.down.fill") }
+                .tag(AppTab.apps)
             TabPage(title: owner ? "Library" : "App Library", plus: owner ? openWebsite : nil) { LibraryTab() }
-                .tabItem { Label(owner ? "Library" : "Apps", systemImage: "square.grid.2x2.fill") }
+                .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
                 .badge(updates)
                 .tag(AppTab.library)
             TabPage(title: "Signed") { SignedTab() }
                 .tabItem { Label("Signed", systemImage: "arrow.down.circle.fill") }
                 .tag(AppTab.signed)
-            TabPage(title: "Certificates", plus: { router.open(.addCert) }) { CertsTab() }
-                .tabItem { Label("Certificates", systemImage: "checkmark.shield.fill") }
-                .badge(certWarn ? Text("!") : nil)
-                .tag(AppTab.certs)
+            if !owner {
+                TabPage(title: "Certificates", plus: { router.open(.addCert) }) { CertsTab() }
+                    .tabItem { Label("Certificates", systemImage: "checkmark.shield.fill") }
+                    .badge(certWarn ? Text("!") : nil)
+                    .tag(AppTab.certs)
+            }
             if owner {
                 TabPage(title: "Users", plus: { router.open(.newInvite) }) { UsersTab() }
                     .tabItem { Label("Users", systemImage: "person.2.fill") }
@@ -113,9 +118,12 @@ struct MainShell: View {
             }
             TabPage(title: server.isOwner ? "Settings" : "Account") { SettingsTab() }
                 .tabItem { Label(server.isOwner ? "Settings" : "Account", systemImage: server.isOwner ? "gearshape.fill" : "person.crop.circle.fill") }
+                .badge(owner && certWarn ? Text("!") : nil)
                 .tag(AppTab.settings)
         }
         .toast($router.toast)
+        .onAppear { router.certsInSettings = owner }
+        .onChange(of: owner) { v in router.certsInSettings = v; if v && router.tab == .certs { router.tab = .settings } }
         .task {
             await server.syncWithDevice(force: true)
             await local.saveMissingCopies(server: server)

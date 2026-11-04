@@ -6,12 +6,21 @@ struct SettingsTab: View {
     @EnvironmentObject var router: Router
     @State private var confirmLogout = false
     @AppStorage("keepSignedCopies") private var keepCopies = true
+    @AppStorage("keepImports") private var keepImports = true
 
     var settings: SSettings? { server.state?.settings }
     var info: SServerInfo? { server.state?.server }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if server.isStaff {
+                // The tab bar only fits five tabs, so your certificates live here.
+                let warn = server.certs.contains { $0.check?.status == "revoked" || ($0.daysLeft ?? 99) < 7 }
+                ListBox {
+                    LinkRow(title: "🔐 Certificates", value: warn ? "⚠️ Check them" : "\(server.certs.count)", valueColor: warn ? Theme.red : Theme.muted) { router.open(.certsList) }
+                }
+                .padding(.bottom, 4)
+            }
             if server.isOwner { ownerSections } else if server.isAdmin { adminSections }
             accountSection
             if !server.isOwner {
@@ -286,12 +295,13 @@ struct SettingsTab: View {
                           if v { Task { await local.saveMissingCopies(server: server) } }
                       }))
             RowLine()
+            ToggleRow(title: "Keep imported apps on this iPhone", sub: "Apps you import in the Apps tab stay here after you sign them, so you can sign them again any time. Off = removed once they're signed.",
+                      isOn: $keepImports)
+            RowLine()
             LinkRow(title: "📲 What iOS shows", value: "\(DeviceApps.userApps.count) of your apps") { router.open(.deviceApps) }
             RowLine()
             ValueRow(title: "What's installed", value: DeviceApps.statusText,
                      sub: DeviceApps.trustsNotInstalled ? "" : "Mango goes by what you installed through it. Mark apps you deleted with \"Not on my phone anymore\" (touch and hold them in Signed).")
-            RowLine()
-            LinkRow(title: "📦 Apps on this iPhone", value: "\(local.apps.count)") { router.open(.localApps) }
             RowLine()
             LinkRow(title: "📱 Certificates on this iPhone", value: "\(local.ownCerts.count)") { router.open(.localCerts) }
             RowLine()

@@ -56,7 +56,9 @@ struct SignSheet: View {
     @State private var presetName = ""
     @State private var ready = false
 
-    var app: SApp? { server.app(appId) }
+    /// An app saved on this iPhone (from the Apps tab) instead of one from the server.
+    var localApp: SApp? = nil
+    var app: SApp? { localApp ?? server.app(appId) }
     var certs: [SCert] { server.certs }
     var cert: SCert? { certs.first { $0.id == certId } ?? server.defaultCert }
     var presets: [SPreset] { server.state?.presets ?? [] }
@@ -85,7 +87,8 @@ struct SignSheet: View {
                     Button("Cancel", role: .cancel) {}
                 } message: { Text("Using an existing name updates it.") }
         } else {
-            SheetScroll { WebEmpty(icon: "questionmark.app", title: "Not in the library", text: "That app is no longer in the library.") }
+            SheetScroll { WebEmpty(icon: "questionmark.app", title: appId.hasPrefix("imp_") || appId.hasPrefix("local_") ? "App deleted" : "Not in the library",
+                                   text: appId.hasPrefix("imp_") || appId.hasPrefix("local_") ? "That app was deleted from your Apps tab. Import it again." : "That app is no longer in the library.") }
         }
     }
 
@@ -94,6 +97,7 @@ struct SignSheet: View {
         certId = server.defaultCert?.id ?? ""
         localCertId = local.accountCopy(server.defaultCert?.id)?.id ?? local.defaultCert?.id ?? local.certs.first?.id
         if certs.isEmpty && !local.certs.isEmpty { place = .phone }
+        if a.localFile != nil && !local.certs.isEmpty { place = .phone } // it's already here, so no upload needed
         versionIndex = (a.versions ?? []).contains { ($0.vi ?? -1) == d.versionIndex } ? d.versionIndex : 0
         minOS = d.minOS
         for p in SignPresets.ent { ent[p.key] = d.entitlements.contains { $0.key == p.key } }
@@ -424,7 +428,7 @@ struct SigningSheet: View {
                     Text("Signing failed").font(.title2.bold()).foregroundStyle(Theme.text)
                     WarningBox(text: failure, bad: true)
                     logBox
-                    WebButton(title: "Try Again", kind: .primary) { router.open(.sign(run.app.id, presetId: nil)) }.padding(.top, 8)
+                    WebButton(title: "Try Again", kind: .primary) { router.open(run.app.localId.map { .signLocal($0) } ?? .sign(run.app.id, presetId: nil)) }.padding(.top, 8)
                     WebButton(title: "Close") { router.close() }
                 } else {
                     ProgressView().controlSize(.large).tint(Theme.mango).padding(.vertical, 6)
@@ -487,8 +491,23 @@ struct SigningSheet: View {
         router.say("Signing cancelled")
     }
 
+    /// With "Keep imported apps on this iPhone" off, an app imported here is removed once it's signed.
+    func dropLocalIfNotKept() {
+        guard !LocalStore.keepImports, let lid = run.app.localId, let l = local.apps.first(where: { $0.id == lid }) else { return }
+        local.delete(l)
+    }
+
     func signOnServer() async throws {
         var body = run.body
+        if let f = run.app.localFile {
+            // Saved on this iPhone: send it to your account first (it shows in the Apps tab on the website too).
+            title = "Uploading \(run.app.name)…"; sub = "Keep this screen open"; progress = 0
+            let uid = try await server.uploadLarge(f, purpose: "ipa") { p, line in progress = p; sub = line }
+            title = "Reading app info…"; sub = ""; progress = nil
+            let r = try await server.post("/api/imports", ["uploadId": uid, "fileName": run.app.fileName ?? f.lastPathComponent])
+            guard let impId = (r["import"] as? [String: Any])?["id"] as? String else { throw MangoError("The server didn't save the app. Try again.") }
+            body["appId"] = impId
+        }
         if let icon = run.icon {
             title = "Uploading icon…"
             let iconId = try await server.upload(icon)
@@ -521,6 +540,7 @@ struct SigningSheet: View {
                 Haptics.success()
                 await server.refresh()
                 if LocalStore.keepCopies { let l = local, srv = server; Task { try? await l.saveCopy(s, server: srv) } }
+                dropLocalIfNotKept()
                 Task { await server.syncWithDevice(force: true) }
                 let jit = ((run.body["entitlements"] as? [[String: Any]]) ?? []).contains { ($0["key"] as? String) == "get-task-allow" }
                 router.open(.ready(s.id, jit: jit))
@@ -537,17 +557,21 @@ struct SigningSheet: View {
         guard let plan = run.local, let cert = local.certs.first(where: { $0.id == plan.certId }) else { throw MangoError("Pick a certificate on this iPhone.") }
         let vi = (run.body["versionIndex"] as? Int) ?? 0
         title = "Downloading \(run.app.name)…"; sub = "Keep this screen open"; progress = 0
-        let file = try await server.downloadIPA(run.app, versionIndex: vi) { p in progress = p }
-        defer { try? FileManager.default.removeItem(at: file) }
+        let downloaded = run.app.localFile == nil
+        let file: URL
+        if let f = run.app.localFile { file = f } else { file = try await server.downloadIPA(run.app, versionIndex: vi) { p in progress = p } }
+        defer { if downloaded { try? FileManager.default.removeItem(at: file) } }
         try Task.checkCancellation()
         title = "Signing on this iPhone…"; sub = "Big apps can take a minute"; progress = nil
         var iconData: Data?
-        if let u = server.iconURL(run.app) { iconData = await ImageCache.shared.image(u)?.pngData() }
+        if let f = run.app.localIcon { iconData = try? Data(contentsOf: f) }
+        else if let u = server.iconURL(run.app) { iconData = await ImageCache.shared.image(u)?.pngData() }
         let version = vi == 0 ? run.app.shownVersion : (run.app.versions?.first { ($0.vi ?? -1) == vi }?.version ?? run.app.shownVersion)
         let s = try await local.signFile(file, name: run.app.name, bundleId: run.app.bundleId ?? "", version: version,
                                          icon: iconData, with: cert, options: plan.options)
         router.locked = false
         Haptics.success()
+        dropLocalIfNotKept()
         router.open(.readyLocal(s.id))
     }
 }

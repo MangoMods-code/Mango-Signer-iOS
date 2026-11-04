@@ -264,6 +264,20 @@ struct SApp: Decodable, Identifiable {
     var signDefaults: SignDefaults?
     var remoteUrl: String?
     var testersOnly = false
+    // Your own imported apps (the Apps tab)
+    var isImport = false
+    var importId: String?
+    var iconSrc: String?
+    var onGithub = false
+    var savingToGithub = false
+    var expires: String?
+    var available = true
+    var fileName: String?
+    var lastSigned: String?
+    /// Set for an app saved on this iPhone (not decoded from the server).
+    var localFile: URL?
+    var localIcon: URL?
+    var localId: UUID?
 
     struct NoId: Error {}
     init(from decoder: Decoder) throws {
@@ -291,6 +305,9 @@ struct SApp: Decodable, Identifiable {
         signDefaults = c.obj("signDefaults")
         remoteUrl = c.str("remoteUrl")
         testersOnly = c.bool("testersOnly") ?? false
+        isImport = c.bool("isImport") ?? false; importId = c.str("importId"); iconSrc = c.str("iconSrc")
+        onGithub = c.bool("onGithub") ?? false; savingToGithub = c.bool("savingToGithub") ?? false; expires = c.str("expires")
+        available = c.bool("available") ?? true; fileName = c.str("fileName"); lastSigned = c.str("lastSigned")
         let added = parseDate(addedAt), updated = parseDate(updatedAt)
         isNew = Date().timeIntervalSince(added ?? .distantPast) < 3 * 86400
         isUpdatedRecently = !isNew && previousVersion != nil && Date().timeIntervalSince(updated ?? .distantPast) < 3 * 86400
@@ -308,6 +325,15 @@ struct SApp: Decodable, Identifiable {
     var votes: Int { (likes ?? 0) + (dislikes ?? 0) }
     var score: Int { (likes ?? 0) - (dislikes ?? 0) }
     var getLabel: String { hasUpdate ? "Update" : isStopped ? "Fix" : "Get" }
+
+    /// An app saved on this iPhone, shaped like a library app so the sign screen can use it.
+    static func local(_ l: LibraryApp) -> SApp? {
+        let d: [String: Any] = ["id": "local_\(l.id.uuidString)", "name": l.name, "bundleId": l.bundleId, "version": l.version, "build": l.build,
+                                "minOS": l.minOS, "size": Double(l.size), "hasIcon": FileManager.default.fileExists(atPath: Paths.icon(l.id).path), "addedAt": ISO8601DateFormatter().string(from: l.addedAt)]
+        guard let data = try? JSONSerialization.data(withJSONObject: d), var a = try? JSONDecoder().decode(SApp.self, from: data) else { return nil }
+        a.localFile = l.url; a.localIcon = Paths.icon(l.id); a.localId = l.id
+        return a
+    }
 }
 
 /// A hand-picked list of apps shown in the library (owner and admins make these).
@@ -761,6 +787,8 @@ struct STelegramInfo: Decodable {
 struct ServerState: Decodable {
     var account: Account
     var apps: [SApp]
+    var imports: [SApp]
+    var importsOnGithub = false
     var categories: [SCategory]?
     var collections: [SCollection]
     var certs: [SCert]?
@@ -790,6 +818,8 @@ struct ServerState: Decodable {
         let rawApps = (try? c.decodeIfPresent([Lossy<SApp>].self, forKey: AnyKey("apps"))) ?? []
         apps = rawApps.compactMap { $0.value }
         skipped = rawApps.count - apps.count
+        imports = c.list("imports") ?? []
+        importsOnGithub = c.bool("importsOnGithub") ?? false
         categories = c.list("categories")
         collections = c.list("collections") ?? []
         certs = c.list("certs")
@@ -922,7 +952,7 @@ final class Server: ObservableObject {
     static var builtInServer: URL? {
         (Bundle.main.object(forInfoDictionaryKey: "MangoServerURL") as? String).flatMap { $0.isEmpty ? nil : normalize($0) }
     }
-    @Published var state: ServerState? { didSet { libCache.removeAll(); countCache.removeAll(); appIndex = Dictionary((state?.apps ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) } }
+    @Published var state: ServerState? { didSet { libCache.removeAll(); countCache.removeAll(); appIndex = Dictionary(((state?.apps ?? []) + (state?.imports ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) } }
     /// Library lists and filter counts, worked out once per library load instead of on every redraw.
     var libCache: [String: [SApp]] = [:]
     var countCache: [String: Int] = [:]
@@ -1181,6 +1211,8 @@ final class Server: ObservableObject {
     // MARK: helpers for views
 
     func iconURL(_ app: SApp) -> URL? {
+        if let f = app.localIcon { return app.hasIcon == true ? f : nil }
+        if app.isImport { return app.iconSrc.flatMap { url($0) } }
         guard app.hasIcon == true || app.customIcon == true else { return nil }
         return url("/api/apps/\(app.id)/icon?v=\(Int(app.iconVersion ?? 0))")
     }
@@ -1240,7 +1272,7 @@ final class Server: ObservableObject {
 
     /// Uploads a big file (an .ipa) in 8 MB pieces, a few at a time, retrying pieces if the connection drops —
     /// the same way the website does. Small files go up in one go. Returns the upload id.
-    func uploadLarge(_ fileURL: URL, progress: @escaping @MainActor (Double, String) -> Void) async throws -> String {
+    func uploadLarge(_ fileURL: URL, purpose: String? = nil, progress: @escaping @MainActor (Double, String) -> Void) async throws -> String {
         let scoped = fileURL.startAccessingSecurityScopedResource()
         defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
         let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.int64Value ?? 0
@@ -1252,7 +1284,9 @@ final class Server: ObservableObject {
             progress(1, "Uploaded")
             return id
         }
-        let start = try await post("/api/upload/start", ["size": size, "chunkSize": chunk])
+        var startBody: [String: Any] = ["size": size, "chunkSize": chunk]
+        if let purpose { startBody["purpose"] = purpose }
+        let start = try await post("/api/upload/start", startBody)
         guard let uid = start["uploadId"] as? String else { throw MangoError("The server didn't start the upload. Try again.") }
         let piece = (start["chunkSize"] as? NSNumber)?.int64Value ?? chunk
         let count = (start["count"] as? NSNumber)?.intValue ?? Int((size + piece - 1) / piece)
@@ -1335,7 +1369,8 @@ final class Server: ObservableObject {
 
     /// Downloads an app's original .ipa (for signing on this iPhone). Reports progress 0...1.
     func downloadIPA(_ app: SApp, versionIndex: Int, progress: @escaping (Double) -> Void) async throws -> URL {
-        guard let u = url("/api/apps/\(app.id)/ipa?v=\(versionIndex)") else { throw MangoError("No server") }
+        let path = app.isImport ? "/api/imports/\(app.importId ?? "")/file" : "/api/apps/\(app.id)/ipa?v=\(versionIndex)"
+        guard let u = url(path) else { throw MangoError("No server") }
         return try await downloadFile(u, progress: progress)
     }
 
@@ -1386,7 +1421,7 @@ final class ImageCache: @unchecked Sendable {
         if let t = inFlight[url] { return await t.value }
         let t = Task.detached(priority: .utility) { () -> UIImage? in
             guard let (d, r) = try? await URLSession.shared.data(from: url),
-                  ((r as? HTTPURLResponse)?.statusCode ?? 0) == 200, let img = UIImage(data: d) else { return nil }
+                  url.isFileURL || ((r as? HTTPURLResponse)?.statusCode ?? 0) == 200, let img = UIImage(data: d) else { return nil }
             if maxPixels > 0, max(img.size.width, img.size.height) * img.scale > maxPixels {
                 return await img.byPreparingThumbnail(ofSize: CGSize(width: maxPixels, height: maxPixels)) ?? img.preparingForDisplay() ?? img
             }

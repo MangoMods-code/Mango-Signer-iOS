@@ -229,6 +229,11 @@ final class LocalStore: ObservableObject {
 
     @Published var saving: [String: Double] = [:]
     private var copyQueue = false
+    /// Apps imported in the Apps tab stay on this iPhone after they're signed (on by default).
+    static var keepImports: Bool {
+        get { UserDefaults.standard.object(forKey: "keepImports") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "keepImports") }
+    }
     static var keepCopies: Bool {
         get { UserDefaults.standard.object(forKey: "keepSignedCopies") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "keepSignedCopies") }

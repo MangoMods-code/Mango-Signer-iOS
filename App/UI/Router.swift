@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-enum AppTab: String, Hashable { case library, signed, certs, users, settings }
+enum AppTab: String, Hashable { case apps, library, signed, certs, users, settings }
 
 /// Everything needed to run one signing (on the server or on this iPhone).
 final class SignRun: Identifiable {
@@ -69,6 +69,8 @@ enum Route: Identifiable, Equatable {
     case github(Bool)
     case tgBot
     case jobRun(String, String, String)
+    case signLocal(UUID)
+    case certsList
 
     var id: String {
         switch self {
@@ -116,6 +118,8 @@ enum Route: Identifiable, Equatable {
         case .github(let e): return "github-\(e)"
         case .tgBot: return "tgBot"
         case .jobRun(_, let job, _): return "jobRun-\(job)"
+        case .signLocal(let id): return "signLocal-\(id)"
+        case .certsList: return "certsList"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -123,7 +127,7 @@ enum Route: Identifiable, Equatable {
 
 @MainActor
 final class Router: ObservableObject {
-    @Published var tab: AppTab = .library
+    @Published var tab: AppTab = .apps
     @Published var route: Route?
     @Published var toast: String?
     /// While signing, the sheet can't be swiped away (like the website).
@@ -141,7 +145,14 @@ final class Router: ObservableObject {
     func open(_ r: Route) { route = r }
     func close() { locked = false; route = nil }
     func say(_ message: String) { toast = message }
-    func go(_ tab: AppTab) { close(); self.tab = tab }
+    /// Taps "+" on the Apps tab (opens the file picker there).
+    @Published var importTick = 0
+    /// For you and admins the Certificates tab lives in Settings (five tabs fit), so it opens as a sheet.
+    var certsInSettings = false
+    func go(_ tab: AppTab) {
+        if tab == .certs && certsInSettings { open(.certsList); return }
+        close(); self.tab = tab
+    }
 
     func signed(_ id: String, _ server: Server) -> SSigned? {
         server.state?.signed?.first { $0.id == id } ?? signedCache[id]
@@ -196,6 +207,7 @@ struct SheetScroll<Content: View>: View {
 struct SheetHost: View {
     @EnvironmentObject var router: Router
     @EnvironmentObject var server: Server
+    @EnvironmentObject var local: LocalStore
 
     var body: some View {
         Group {
@@ -244,6 +256,13 @@ struct SheetHost: View {
             case .github(let e): GithubSheet(editing: e)
             case .tgBot: TgBotSheet()
             case .jobRun(let t, let job, let then): JobRunSheet(title: t, jobId: job, then: then)
+            case .signLocal(let id):
+                if let l = local.apps.first(where: { $0.id == id }), let a = SApp.local(l) {
+                    SignSheet(appId: a.id, presetId: nil, localApp: a)
+                } else {
+                    SheetScroll { WebEmpty(icon: "questionmark.app", title: "App deleted", text: "That app isn't on this iPhone anymore. Import it again.") }
+                }
+            case .certsList: CertsListSheet()
             case nil: Theme.card.ignoresSafeArea()
             }
         }

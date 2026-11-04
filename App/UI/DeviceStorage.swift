@@ -97,7 +97,7 @@ struct DeviceStorageCard: View {
                 Hint(text: "Mango Signer uses \(formatBytes(i.mango).isEmpty ? "0 KB" : formatBytes(i.mango)) of it: \(local.apps.count) app\(local.apps.count == 1 ? "" : "s") and \(local.signed.count) signed cop\(local.signed.count == 1 ? "y" : "ies") saved here.")
                 HStack(spacing: 8) {
                     WebButton(title: clearing ? "Clearing…" : "Clear temp", disabled: clearing || i.temp < 1) { clear() }
-                    WebButton(title: "Saved apps") { router.open(.localApps) }
+                    WebButton(title: "Saved apps") { router.go(.apps) }
                 }
             } else {
                 HStack { ProgressView().tint(Theme.mango); Text("Checking this iPhone…").font(.subheadline).foregroundStyle(Theme.muted) }
