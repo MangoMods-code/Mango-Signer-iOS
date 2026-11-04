@@ -60,6 +60,15 @@ enum Route: Identifiable, Equatable {
     case moveToGithub(String)
     case autoSort
     case quickSort
+    case allSources
+    case addSource
+    case source(String)
+    case telegram(String?)
+    case tgChannel(String?)
+    case tgScan(String)
+    case github(Bool)
+    case tgBot
+    case jobRun(String, String, String)
 
     var id: String {
         switch self {
@@ -98,6 +107,15 @@ enum Route: Identifiable, Equatable {
         case .moveToGithub(let a): return "moveToGithub-\(a)"
         case .autoSort: return "autoSort"
         case .quickSort: return "quickSort"
+        case .allSources: return "allSources"
+        case .addSource: return "addSource"
+        case .source(let id): return "source-\(id)"
+        case .telegram(let st): return "telegram-\(st ?? "")"
+        case .tgChannel(let id): return "tgChannel-\(id ?? "new")"
+        case .tgScan(let id): return "tgScan-\(id)"
+        case .github(let e): return "github-\(e)"
+        case .tgBot: return "tgBot"
+        case .jobRun(_, let job, _): return "jobRun-\(job)"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -217,6 +235,15 @@ struct SheetHost: View {
             case .moveToGithub(let id): MoveToGithubSheet(appId: id)
             case .autoSort: AutoSortSheet()
             case .quickSort: QuickSortSheet()
+            case .allSources: AllSourcesSheet()
+            case .addSource: AddSourceSheet()
+            case .source(let id): SourceSheet(sourceId: id)
+            case .telegram(let st): TelegramSheet(step: st)
+            case .tgChannel(let id): TgChannelSheet(channelId: id)
+            case .tgScan(let id): TgScanSheet(channelId: id)
+            case .github(let e): GithubSheet(editing: e)
+            case .tgBot: TgBotSheet()
+            case .jobRun(let t, let job, let then): JobRunSheet(title: t, jobId: job, then: then)
             case nil: Theme.card.ignoresSafeArea()
             }
         }

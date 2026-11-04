@@ -659,10 +659,102 @@ struct SGithubInfo: Decodable {
     var connected: Bool
     var signedToGithub: Bool
     var storeUploads: Bool
+    var owner: String?
+    var repo: String?
+    var tag: String?
+    var isPrivate: Bool
+    var apps: Int
+    var lastSync: String?
+    var lastError: String?
+    var signedSaved: Int
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         connected = c.bool("connected") ?? false; signedToGithub = c.bool("signedToGithub") ?? false
         storeUploads = c.bool("storeUploads") ?? false
+        owner = c.str("owner"); repo = c.str("repo"); tag = c.str("tag"); isPrivate = c.bool("private") ?? false
+        apps = c.int("apps") ?? 0; lastSync = c.str("lastSync"); lastError = c.str("lastError"); signedSaved = c.int("signedSaved") ?? 0
+    }
+}
+
+/// A source (AltStore-style list, GitHub repo, downloads page) or a Telegram channel.
+struct SSource: Decodable, Identifiable {
+    struct Options: Decodable {
+        var storage: String?
+        var skipHave: Bool?
+        var updateMine: Bool?
+        var matchName: Bool?
+        var captionNotes: Bool?
+        var autoSync: Bool?
+        var keywords: String?
+        init(from decoder: Decoder) throws {
+            let c = try keyed(decoder)
+            storage = c.str("storage"); skipHave = c.bool("skipHave"); updateMine = c.bool("updateMine"); matchName = c.bool("matchName")
+            captionNotes = c.bool("captionNotes"); autoSync = c.bool("autoSync"); keywords = c.str("keywords")
+        }
+        init() {}
+    }
+    struct Result: Decodable {
+        var added = 0, updated = 0, same = 0, failed = 0
+        init(from decoder: Decoder) throws {
+            let c = try keyed(decoder)
+            added = c.int("added") ?? 0; updated = c.int("updated") ?? 0; same = c.int("same") ?? 0; failed = c.int("failed") ?? 0
+        }
+    }
+    struct Excluded: Decodable { var name: String?; var bundleId: String?
+        init(from decoder: Decoder) throws { let c = try keyed(decoder); name = c.str("name"); bundleId = c.str("bundleId") }
+    }
+    var id: String
+    var kind: String
+    var name: String
+    var url: String
+    var iconURL: String?
+    var subtitle: String?
+    var username: String?
+    var apps: Int
+    var lastSync: String?
+    var lastError: String?
+    var showInLibrary: Bool
+    var skipHave: Bool?
+    var pinned: Bool?
+    var repoOwner: String?
+    var repoName: String?
+    var categoryId: String?
+    var options: Options
+    var lastResult: Result?
+    var excluded: [Excluded]
+    var deepest: Int?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        guard let id = c.str("id") else { throw SApp.NoId() }
+        self.id = id
+        kind = c.str("kind") ?? "source"; name = c.str("name") ?? "Source"; url = c.str("url") ?? ""
+        iconURL = c.str("iconURL"); subtitle = c.str("subtitle"); username = c.str("username")
+        apps = c.int("apps") ?? 0; lastSync = c.str("lastSync"); lastError = c.str("lastError")
+        showInLibrary = c.bool("showInLibrary") ?? true; skipHave = c.bool("skipHave"); pinned = c.bool("pinned")
+        struct Repo: Decodable { var owner: String?; var repo: String? }
+        let r: Repo? = c.obj("repo")
+        repoOwner = r?.owner; repoName = r?.repo
+        categoryId = c.str("categoryId"); options = c.obj("options") ?? Options(); lastResult = c.obj("lastResult")
+        excluded = c.list("excluded") ?? []; deepest = c.int("deepest")
+    }
+    var isTelegram: Bool { kind == "telegram" }
+    /// Sources with "Mango" in the name start out pinned (same as the website).
+    var isPinned: Bool { pinned ?? (name.range(of: "mango", options: .caseInsensitive) != nil) }
+}
+
+struct STelegramInfo: Decodable {
+    var connected: Bool
+    var pending: String?
+    var meName: String?
+    var meUsername: String?
+    var mePhone: String?
+    var error: String?
+    init(from decoder: Decoder) throws {
+        let c = try keyed(decoder)
+        connected = c.bool("connected") ?? false; pending = c.str("pending"); error = c.str("error")
+        struct Me: Decodable { var name: String?; var username: String?; var phone: String? }
+        let me: Me? = c.obj("me")
+        meName = me?.name; meUsername = me?.username; mePhone = me?.phone
     }
 }
 
@@ -688,6 +780,8 @@ struct ServerState: Decodable {
     var mySignins: [SSignin]
     var securityLog: [SSignin]
     var github: SGithubInfo?
+    var sources: [SSource]
+    var telegram: STelegramInfo?
     var skipped = 0
 
     init(from decoder: Decoder) throws {
@@ -715,6 +809,8 @@ struct ServerState: Decodable {
         mySignins = c.list("mySignins") ?? []
         securityLog = c.list("securityLog") ?? []
         github = c.obj("github")
+        sources = c.list("sources") ?? []
+        telegram = c.obj("telegram")
     }
 }
 

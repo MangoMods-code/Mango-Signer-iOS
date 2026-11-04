@@ -60,10 +60,7 @@ struct SettingsTab: View {
         SectionTitle(text: "This iPhone's storage")
         DeviceStorageCard()
 
-        SectionTitle(text: "Cloud Library")
-        ListBox {
-            LinkRow(title: "☁ Sources, GitHub & Telegram", value: "Website") { website("Cloud Library") }
-        }
+        CloudSection()
 
         SectionTitle(text: "Signing")
         ListBox {
@@ -191,12 +188,11 @@ struct SettingsTab: View {
         ListBox {
             ValueRow(title: "Apps", value: "\(apps.count) (\(apps.filter { $0.published != false }.count) shown)")
             RowLine()
-            LinkRow(title: "☁ Sources & Telegram channels", value: "Website") { website("Sources") }
-            RowLine()
             LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { website("Categories") }
             RowLine()
             LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { website("Tweaks") }
         }
+        CloudSection()
         SectionTitle(text: "Tools")
         ListBox {
             LinkRow(title: "📊 Stats & activity") { website("Stats") }
