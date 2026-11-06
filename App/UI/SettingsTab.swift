@@ -424,9 +424,31 @@ struct ActivitySheet: View {
     @EnvironmentObject var server: Server
     @EnvironmentObject var router: Router
 
+    func checkAll() {
+        Task {
+            do {
+                let r = try await server.post("/api/checks/run-all")
+                let n = (r["queued"] as? NSNumber)?.intValue
+                router.say(n.map { "Checking \($0) source\($0 == 1 ? "" : "s") and channel\($0 == 1 ? "" : "s")" } ?? "Checking everything for new apps and updates")
+                await server.refreshTasks()
+            } catch { router.say(error.localizedDescription) }
+        }
+    }
+
     var body: some View {
         SheetScroll {
             SheetTitle(text: "⏳ Activity")
+            if server.isStaff {
+                HStack(spacing: 10) {
+                    WebButton(title: "↻ Check all now", kind: .primary) { checkAll() }
+                    if server.tasks.contains(where: { $0.status == "running" || $0.status == "queued" }) {
+                        WebButton(title: "Stop all", kind: .danger) {
+                            Task { do { try await server.post("/api/jobs/cancel-all"); await server.refreshTasks(); router.say("Stopping everything…") } catch { router.say(error.localizedDescription) } }
+                        }
+                    }
+                }
+                .padding(.bottom, 12)
+            }
             if server.tasks.isEmpty {
                 WebEmpty(icon: "checkmark.circle", title: "Nothing going on", text: "Signing, checks and other tasks from the last half hour show up here.")
             } else {

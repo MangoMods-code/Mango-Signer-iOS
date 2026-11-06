@@ -712,3 +712,106 @@ struct BackupSheet: View {
         }
     }
 }
+
+// MARK: - Translate descriptions
+
+struct TranslateSheet: View {
+    @EnvironmentObject var server: Server
+    @EnvironmentObject var router: Router
+    @State private var loaded = false
+    @State private var on = false
+    @State private var provider = "mymemory"
+    @State private var email = ""
+    @State private var key = ""
+    @State private var hasKey = false
+    @State private var status = ""
+    @State private var note: String?
+    @State private var lastError: String?
+    @State private var pending = 0
+    @State private var busy = false
+
+    var body: some View {
+        SheetScroll {
+            SheetTitle(text: "🌐 Translate descriptions")
+            Hint(text: "App descriptions and \"what's new\" notes that aren't in English are translated to English, so the library reads the same everywhere. App names aren't changed. Everyone sees the translation with a \"Show original\" link, and anything you write yourself is never touched.").padding(.bottom, 12)
+            if !loaded { ProgressView().tint(Theme.mango).frame(maxWidth: .infinity).padding(.top, 20) } else {
+                ListBox(fill: Theme.bg2) { ToggleRow(title: "Translate descriptions", sub: "Checks every app, then each new one as sources and channels add them", isOn: $on) }
+                Field(label: "Translator") {
+                    SelectBox(selection: $provider, options: [("mymemory", "MyMemory — free, no sign-up, slower"), ("deepl", "DeepL — free account, best quality")])
+                }
+                .padding(.top, 12)
+                if provider == "deepl" {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("1. Make a free account at deepl.com/pro-api and pick DeepL API Free (it asks for a card to check you're a real person, but the free plan never charges).")
+                        Text("2. Open Account › API Keys and copy your key (it ends in :fx).")
+                        Text("3. Paste it below. You get 500,000 characters a month, plenty for thousands of apps.")
+                    }
+                    .font(.subheadline).foregroundStyle(Theme.soft).padding(.bottom, 10)
+                    Field(label: "DeepL API key") { SecureField(hasKey ? "Saved — paste a new one to replace it" : "xxxxxxxx-xxxx-…:fx", text: $key).plainInput().inputStyle() }
+                } else {
+                    Hint(text: "5,000 characters a day, roughly 10–20 descriptions, so a big channel takes a while. Add an email to get 50,000 a day (it's only sent to MyMemory, to count your allowance).").padding(.bottom, 8)
+                    Field(label: "Email (optional)") { TextField("you@example.com", text: $email).plainInput().keyboardType(.emailAddress).inputStyle() }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(status).font(.subheadline).foregroundStyle(Theme.text)
+                    if let note { Text(note).font(.caption).foregroundStyle(Theme.muted) }
+                    if let lastError { Text("⚠️ \(lastError)").font(.caption).foregroundStyle(Theme.red) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14).background(Theme.bg2).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                VStack(spacing: 10) {
+                    WebButton(title: busy ? "Saving…" : "Save", kind: .primary, big: true, disabled: busy) { save() }
+                    if on && pending > 0 {
+                        WebButton(title: "Translate now") {
+                            Task { _ = try? await server.post("/api/translate/run"); router.say("Translating in the background"); await load() }
+                        }
+                    }
+                }
+                .padding(.top, 12)
+            }
+        }
+        .task { await load() }
+    }
+
+    func apply(_ t: [String: Any]) {
+        let n = { (k: String) in (t[k] as? NSNumber)?.intValue ?? 0 }
+        on = t["on"] as? Bool ?? false
+        provider = t["provider"] as? String ?? "mymemory"
+        email = t["email"] as? String ?? ""
+        hasKey = t["hasKey"] as? Bool ?? false
+        pending = n("pending")
+        var bits = ["\(n("translated")) translated", pending > 0 ? "\(pending) waiting" : "nothing waiting"]
+        if let limit = (t["dailyLimit"] as? NSNumber)?.intValue { bits.append("\(n("usedToday")) of \(limit) characters used today") }
+        status = bits.joined(separator: " · ")
+        if t["running"] as? Bool == true { note = "Translating right now…" }
+        else if let p = t["pausedUntil"] as? String { note = "Paused until \(parseDate(p).map { $0.formatted(date: .abbreviated, time: .shortened) } ?? p) (daily allowance)." }
+        else { note = nil }
+        lastError = t["lastError"] as? String
+        loaded = true
+    }
+
+    func load() async {
+        guard let d = try? await server.data("GET", "/api/translate"),
+              let t = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["translate"] as? [String: Any] else { router.say("Couldn't load the translation settings"); return }
+        apply(t)
+    }
+
+    func save() {
+        busy = true
+        var body: [String: Any] = ["on": on, "provider": provider, "email": email]
+        let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !k.isEmpty { body["key"] = k }
+        Task {
+            defer { busy = false }
+            do {
+                let r = try await server.post("/api/translate", body, method: "PATCH")
+                if let t = r["translate"] as? [String: Any] { apply(t) }
+                key = ""
+                await server.refresh()
+                if let u = r["usage"] as? [String: Any] {
+                    router.say("DeepL key works · \((u["used"] as? NSNumber)?.intValue ?? 0) of \((u["limit"] as? NSNumber)?.intValue ?? 0) used this month")
+                } else { router.say(on ? "Translating in the background" : "Saved") }
+            } catch { router.say(error.localizedDescription) }
+        }
+    }
+}

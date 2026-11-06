@@ -12,6 +12,16 @@ struct AppSheet: View {
 
     var app: SApp? { server.app(appId) }
 
+    @State private var original: String?
+    func toggleOriginal(_ a: SApp) {
+        if original != nil { original = nil; return }
+        Task {
+            if let d = try? await server.data("GET", "/api/apps/\(a.id)/original"),
+               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let o = j["description"] as? String { original = o }
+            else { router.say("Couldn't load the original") }
+        }
+    }
+
     var body: some View {
         if let a = app {
             content(a)
@@ -109,7 +119,15 @@ struct AppSheet: View {
             }
             if let d = a.description, !d.isEmpty {
                 SectionTitle(text: "About")
-                Text(d).font(.system(size: 15)).foregroundStyle(Theme.soft).textSelection(.enabled)
+                Text(original ?? d).font(.system(size: 15)).foregroundStyle(Theme.soft).textSelection(.enabled)
+                if let lang = a.translatedFrom {
+                    HStack(spacing: 4) {
+                        Text("🌐 Translated from \(lang) ·").font(.caption).foregroundStyle(Theme.muted)
+                        Button(original == nil ? "Show original" : "Show translation") { toggleOriginal(a) }
+                            .font(.caption.weight(.semibold)).foregroundStyle(Theme.mango)
+                    }
+                    .padding(.top, 4)
+                }
             }
             if let n = a.notes, !n.isEmpty {
                 SectionTitle(text: "What's changed / notes")

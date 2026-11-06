@@ -54,6 +54,13 @@ struct CloudSection: View {
             }
             RowLine()
             LinkRow(title: "＋ Add a source", value: "AltStore / ESign repos") { router.open(.addSource) }
+            RowLine()
+            LinkRow(title: "↻ Check all now", value: "Sources & channels") {
+                Task {
+                    do { try await server.post("/api/checks/run-all"); router.say("Checking everything for new apps and updates"); router.open(.activity) }
+                    catch { router.say(error.localizedDescription) }
+                }
+            }
             if server.isOwner || tg?.connected == true {
                 RowLine()
                 LinkRow(title: "✈️ Telegram channels",
@@ -64,6 +71,8 @@ struct CloudSection: View {
                 LinkRow(title: "GitHub storage", value: gh?.connected == true ? "\(gh?.owner ?? "")/\(gh?.repo ?? "")" : "Off") { router.open(.github(false)) }
                 RowLine()
                 LinkRow(title: "🤖 Telegram bot", value: "") { router.open(.tgBot) }
+                RowLine()
+                LinkRow(title: "🌐 Translate descriptions", value: server.state?.settings?.translateOn == true ? "On" : "Off") { router.open(.translate) }
             }
         }
         Hint(text: "Cloud apps only keep their info and icon here. The file is downloaded while signing and deleted right after, so your Railway volume stays empty.").padding(.top, 6)
@@ -562,6 +571,12 @@ struct TgChannelSheet: View {
         SheetScroll {
             if let c = channel { edit(c) } else { add }
         }
+        .confirmationDialog("Remove \(channel?.name ?? "channel")?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { if let c = channel { removeChannel(c) } }
+        } message: { Text("Its \(channelApps.count) app\(channelApps.count == 1 ? "" : "s") leave the library. People who installed them keep them.") }
+        .confirmationDialog("Delete \(channelApps.filter { $0.missing == true }.count) removed apps?", isPresented: $confirmDeleteMissing, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let c = channel { deleteMissing(c) } }
+        } message: { Text("Mango double-checks the channel first, so only apps that are really gone get deleted. This can't be undone.") }
         .onAppear {
             guard !loaded else { return }
             loaded = true
@@ -571,6 +586,27 @@ struct TgChannelSheet: View {
                 matchName = o.matchName == true; captionNotes = o.captionNotes != false; autoSync = o.autoSync != false
                 show = c.showInLibrary; keywords = o.keywords ?? ""; categoryId = c.categoryId ?? "__auto"; name = c.name
             }
+        }
+    }
+
+    var channelApps: [SApp] {
+        guard let c = channel else { return [] }
+        return (server.state?.apps ?? []).filter { $0.cloud == "telegram" && $0.sourceName == c.name }
+    }
+
+    func removeChannel(_ c: SSource) {
+        Task {
+            do { _ = try await server.data("DELETE", "/api/sources/\(c.id)"); await server.refresh(); router.say("Channel removed"); router.open(.telegram(nil)) } catch { router.say(error.localizedDescription) }
+        }
+    }
+
+    func deleteMissing(_ c: SSource) {
+        Task {
+            do {
+                let r = try await server.post("/api/apps/delete-removed", ["sourceId": c.id]); await server.refresh()
+                let n = (r["count"] as? NSNumber)?.intValue ?? 0
+                router.say(n > 0 ? "Deleted \(n) removed app\(n == 1 ? "" : "s")" : "Nothing to delete — those apps are still there")
+            } catch { router.say(error.localizedDescription) }
         }
     }
 
@@ -684,22 +720,6 @@ struct TgChannelSheet: View {
             WebButton(title: "Remove channel", kind: .danger) { confirmRemove = true }
         }
         ExcludedList(source: c)
-            .confirmationDialog("Remove \(c.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
-                Button("Remove", role: .destructive) {
-                    Task { do { _ = try await server.data("DELETE", "/api/sources/\(c.id)"); await server.refresh(); router.say("Channel removed"); router.open(.telegram(nil)) } catch { router.say(error.localizedDescription) } }
-                }
-            } message: { Text("Its \(apps.count) app\(apps.count == 1 ? "" : "s") leave the library. People who installed them keep them.") }
-            .confirmationDialog("Delete \(missing) removed app\(missing == 1 ? "" : "s")?", isPresented: $confirmDeleteMissing, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
-                    Task {
-                        do {
-                            let r = try await server.post("/api/apps/delete-removed", ["sourceId": c.id]); await server.refresh()
-                            let n = (r["count"] as? NSNumber)?.intValue ?? 0
-                            router.say(n > 0 ? "Deleted \(n) removed app\(n == 1 ? "" : "s")" : "Nothing to delete — those apps are still there")
-                        } catch { router.say(error.localizedDescription) }
-                    }
-                }
-            } message: { Text("Mango double-checks the channel first, so only apps that are really gone get deleted. This can't be undone.") }
     }
 }
 

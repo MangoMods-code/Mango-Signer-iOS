@@ -82,6 +82,7 @@ enum Route: Identifiable, Equatable {
     case backup
     case importLink
     case resignAll
+    case translate
 
     var id: String {
         switch self {
@@ -142,6 +143,7 @@ enum Route: Identifiable, Equatable {
         case .backup: return "backup"
         case .importLink: return "importLink"
         case .resignAll: return "resignAll"
+        case .translate: return "translate"
         }
     }
     static func == (a: Route, b: Route) -> Bool { a.id == b.id }
@@ -298,6 +300,7 @@ struct SheetHost: View {
             case .backup: BackupSheet()
             case .importLink: ImportLinkSheet()
             case .resignAll: ResignAllSheet()
+            case .translate: TranslateSheet()
             case nil: Theme.card.ignoresSafeArea()
             }
         }

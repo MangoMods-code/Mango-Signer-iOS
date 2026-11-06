@@ -274,6 +274,8 @@ struct SApp: Decodable, Identifiable {
     var available = true
     var fileName: String?
     var lastSigned: String?
+    /// "Spanish" etc. when the description was translated to English.
+    var translatedFrom: String?
     /// Set for an app saved on this iPhone (not decoded from the server).
     var localFile: URL?
     var localIcon: URL?
@@ -308,6 +310,7 @@ struct SApp: Decodable, Identifiable {
         isImport = c.bool("isImport") ?? false; importId = c.str("importId"); iconSrc = c.str("iconSrc")
         onGithub = c.bool("onGithub") ?? false; savingToGithub = c.bool("savingToGithub") ?? false; expires = c.str("expires")
         available = c.bool("available") ?? true; fileName = c.str("fileName"); lastSigned = c.str("lastSigned")
+        translatedFrom = c.str("translatedFrom")
         let added = parseDate(addedAt), updated = parseDate(updatedAt)
         isNew = Date().timeIntervalSince(added ?? .distantPast) < 3 * 86400
         isUpdatedRecently = !isNew && previousVersion != nil && Date().timeIntervalSince(updated ?? .distantPast) < 3 * 86400
@@ -503,9 +506,11 @@ struct SSettings: Decodable {
     var udidLogin: Bool?
     var lastBackup: String?
     var catRules: [SCatRule] = []
+    var translateOn = false
     init(from decoder: Decoder) throws {
         let c = try keyed(decoder)
         catRules = c.list("catRules") ?? []
+        translateOn = c.bool("translateOn") ?? false
         signsPerDay = c.int("signsPerDay"); signsToday = c.int("signsToday"); everyoneSignsPerDay = c.int("everyoneSignsPerDay"); maxSignedPerUser = c.int("maxSignedPerUser")
         signedRetentionDays = c.int("signedRetentionDays"); signedOnGithub = c.bool("signedOnGithub"); zipLevel = c.int("zipLevel")
         deleteAfterInstall = c.bool("deleteAfterInstall"); udidLogin = c.bool("udidLogin"); lastBackup = c.str("lastBackup")
