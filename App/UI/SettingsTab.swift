@@ -114,6 +114,8 @@ struct SettingsTab: View {
             RowLine()
             LinkRow(title: "Categories & collections", value: "\(server.state?.categories?.count ?? 0)") { router.open(.categories) }
             RowLine()
+            LinkRow(title: "✨ Auto-sort apps") { router.open(.autoSort) }
+            RowLine()
             LinkRow(title: "🧩 Tweaks", value: "\(server.state?.tweaks.count ?? 0)") { router.open(.tweaksLib) }
             RowLine()
             LinkRow(title: "🔁 Duplicates", value: duplicateCount == 0 ? "None" : "\(duplicateCount)") { router.open(.duplicates) }

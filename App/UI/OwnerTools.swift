@@ -58,6 +58,12 @@ struct CategoriesSheet: View {
             }
             .padding(.top, 10)
 
+            SectionTitle(text: "✨ Sort automatically")
+            ListBox(fill: Theme.bg2) {
+                LinkRow(title: "✨ Auto-sort", value: "New + previously auto-sorted") { router.open(.autoSort) }
+                RowLine()
+                LinkRow(title: "Sort by hand, one by one") { router.open(.quickSort) }
+            }
             if server.isOwner {
                 SectionTitle(text: "Sorting rules")
                 Hint(text: "Apps whose name has one of these words go in that category when they're added, and when you run Auto-sort. Separate words with commas.").padding(.bottom, 8)
