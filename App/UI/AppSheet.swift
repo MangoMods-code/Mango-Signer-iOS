@@ -13,6 +13,8 @@ struct AppSheet: View {
     var app: SApp? { server.app(appId) }
 
     @State private var original: String?
+    @State private var favNow: Bool?
+    @State private var voteNow: Int?
     func toggleOriginal(_ a: SApp) {
         if original != nil { original = nil; return }
         Task {
@@ -89,19 +91,33 @@ struct AppSheet: View {
                 .padding(.vertical, 6)
             }
 
+            let fav = favNow ?? server.isFavorite(a)
+            let was = a.myVote ?? 0
+            let mine = voteNow ?? was
+            let likes = (a.likes ?? 0) - (was == 1 ? 1 : 0) + (mine == 1 ? 1 : 0)
+            let dislikes = (a.dislikes ?? 0) - (was == -1 ? 1 : 0) + (mine == -1 ? 1 : 0)
             HStack(spacing: 8) {
-                vote(server.isFavorite(a) ? "♥" : "♡", count: nil, on: server.isFavorite(a), color: Color(hex: 0xff5c8a)) {
-                    let on = !server.isFavorite(a)
-                    try await server.post("/api/apps/\(a.id)/favorite", ["on": on])
+                // Changes show straight away; the server catches up in the background.
+                vote(fav ? "♥" : "♡", count: nil, on: fav, color: Color(hex: 0xff5c8a)) {
+                    let on = !fav
+                    favNow = on
+                    Haptics.tap()
+                    do { try await server.post("/api/apps/\(a.id)/favorite", ["on": on]) } catch { favNow = !on; throw error }
                     return on ? "♥ Added to Favorites" : "Removed from Favorites"
                 }
                 Text("Do you like it?").font(.footnote).foregroundStyle(Theme.muted)
                 Spacer()
-                vote("👍", count: a.likes ?? 0, on: (a.myVote ?? 0) > 0, color: Theme.leaf) {
-                    try await server.post("/api/apps/\(a.id)/vote", ["value": (a.myVote ?? 0) == 1 ? 0 : 1]); return nil
+                vote("👍", count: max(0, likes), on: mine > 0, color: Theme.leaf) {
+                    let v = mine == 1 ? 0 : 1
+                    voteNow = v; Haptics.tap()
+                    do { try await server.post("/api/apps/\(a.id)/vote", ["value": v]) } catch { voteNow = mine; throw error }
+                    return nil
                 }
-                vote("👎", count: a.dislikes ?? 0, on: (a.myVote ?? 0) < 0, color: Theme.red) {
-                    try await server.post("/api/apps/\(a.id)/vote", ["value": (a.myVote ?? 0) == -1 ? 0 : -1]); return nil
+                vote("👎", count: max(0, dislikes), on: mine < 0, color: Theme.red) {
+                    let v = mine == -1 ? 0 : -1
+                    voteNow = v; Haptics.tap()
+                    do { try await server.post("/api/apps/\(a.id)/vote", ["value": v]) } catch { voteNow = mine; throw error }
+                    return nil
                 }
             }
             .padding(.top, 16).padding(.bottom, 4)
@@ -207,7 +223,7 @@ struct AppSheet: View {
     func vote(_ icon: String, count: Int?, on: Bool, color: Color, action: @escaping () async throws -> String?) -> some View {
         Button {
             Task {
-                do { let m = try await action(); await server.refresh(); if let m { router.say(m) } } catch { router.say(error.localizedDescription) }
+                do { let m = try await action(); if let m { router.say(m) }; _ = await server.refresh() } catch { router.say(error.localizedDescription) }
             }
         } label: {
             HStack(spacing: 4) {
