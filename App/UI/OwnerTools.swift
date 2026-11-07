@@ -761,6 +761,11 @@ struct TranslateSheet: View {
                 .padding(14).background(Theme.bg2).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(spacing: 10) {
                     WebButton(title: busy ? "Saving…" : "Save", kind: .primary, big: true, disabled: busy) { save() }
+                    if on {
+                        WebButton(title: "Check every app again") {
+                            Task { _ = try? await server.post("/api/translate/recheck"); router.say("Checking every app again"); try? await Task.sleep(nanoseconds: 1_500_000_000); await load() }
+                        }
+                    }
                     if on && pending > 0 {
                         WebButton(title: "Translate now") {
                             Task { _ = try? await server.post("/api/translate/run"); router.say("Translating in the background"); await load() }

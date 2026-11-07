@@ -62,7 +62,7 @@ struct AutoSortSheet: View {
                 }
                 await server.refresh()
                 let n = { (k: String) in (result[k] as? NSNumber)?.intValue ?? 0 }
-                let how = [(n("byAppStore"), "App Store"), (n("bySimilar"), "like apps you sorted"), (n("byKeyword"), "by name"), (n("bySource"), "by source"), (n("byRule"), "your rules")]
+                let how = [(n("byAppStore"), "App Store"), (n("bySimilar"), "like apps you sorted"), (n("byKeyword"), "by name"), (n("byContent"), "by description"), (n("bySource"), "by source"), (n("byRule"), "your rules"), (n("toOther"), "to Other")]
                     .filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", ")
                 let unknown = n("unknown")
                 router.say("Sorted \(n("sorted"))\(how.isEmpty ? "" : " (\(how))")\(unknown > 0 ? " · \(unknown) still need you" : "")")
