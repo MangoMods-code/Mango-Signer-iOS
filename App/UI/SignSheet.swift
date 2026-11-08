@@ -111,7 +111,6 @@ struct SignSheet: View {
         weak = d.weakDylibs
         injectExt = d.injectExtensions
         tweakIds = Set(d.tweakIds.filter { tid in (server.state?.tweaks ?? []).contains { $0.id == tid } })
-        if let c = cert, c.profile?.wildcard == false, let appId = c.profile?.appId, !appId.isEmpty { bundleId = appId }
     }
 
     @ViewBuilder
@@ -170,7 +169,7 @@ struct SignSheet: View {
         if c.check?.status == "revoked" { bits.append("⚠️ This certificate is revoked, so apps won't open.") }
         if let left = c.daysLeft { bits.append(left < 0 ? "⚠️ This certificate has expired." : "Expires in \(left) days.") }
         if c.deviceIncluded == false { bits.append("⚠️ Your iPhone isn't in this profile.") }
-        if c.profile?.wildcard == false, let id = c.profile?.appId, !id.isEmpty { bits.append("This profile only signs \(id).") }
+        if c.profile?.wildcard == false, let id = c.profile?.appId, !id.isEmpty { bits.append("This profile is made for \(id). Apps keep their own bundle ID (like ESign). If one won't install, type \(id) as its bundle ID.") }
         let blocked = SignPresets.ent.filter { ent[$0.key] == true && !c.allows($0.key) }.map { $0.short }
         if !blocked.isEmpty { bits.append("⚠️ This profile doesn't allow \(blocked.joined(separator: ", ")) — open More options to turn it off, or the app may not install.") }
         return bits.joined(separator: " ")

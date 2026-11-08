@@ -180,7 +180,9 @@ struct ResignAllSheet: View {
                 phases[it.app.id] = .signing
                 var body = server.signBodyFromDefaults(it.app, versionIndex: it.signed.options?.versionIndex ?? 0)
                 body["certId"] = certId
-                if let b = it.signed.bundleId, !b.isEmpty { body["bundleId"] = b } // installs over the copy on your iPhone
+                // Installs over the copy on your iPhone, unless that copy only had the certificate's ID forced on it.
+                let profileIds = Set(server.certs.compactMap { $0.profile?.appId })
+                if let b = it.signed.bundleId, !b.isEmpty, !profileIds.contains(b) { body["bundleId"] = b }
                 do {
                     let r = try await server.post("/api/sign", body)
                     guard let job = r["jobId"] as? String else { throw MangoError("The server didn't start signing.") }
