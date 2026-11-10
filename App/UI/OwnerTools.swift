@@ -241,6 +241,8 @@ struct TweaksSheet: View {
     @State private var uploading: String?
     @State private var progress: Double = 0
     @State private var deleting: STweak?
+    /// Set while picking settings files for a tweak (the same file picker is used for both).
+    @State private var filesFor: STweak?
 
     var body: some View {
         let tweaks = server.state?.tweaks ?? []
@@ -263,6 +265,10 @@ struct TweaksSheet: View {
                                 if !t.published { Badge(text: "Hidden", small: true) }
                                 Spacer()
                                 Menu {
+                                    Button { filesFor = t; picking = true } label: { Label("Add settings files", systemImage: "doc.badge.plus") }
+                                    if !t.extras.isEmpty {
+                                        Button { setDocs(t) } label: { Label(t.toDocuments ? "Don't copy files to Documents" : "Copy files to Documents", systemImage: t.toDocuments ? "folder.badge.minus" : "folder.badge.plus") }
+                                    }
                                     Button { toggle(t) } label: { Label(t.published ? "Hide from everyone" : "Show to everyone", systemImage: t.published ? "eye.slash" : "eye") }
                                     Button(role: .destructive) { deleting = t } label: { Label("Delete", systemImage: "trash") }
                                 } label: { Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(Theme.mango) }
@@ -271,15 +277,32 @@ struct TweaksSheet: View {
                             if let d = t.description, !d.isEmpty { Text(d).font(.caption).foregroundStyle(Theme.soft).lineLimit(3) }
                             Text(t.files.map { $0.name + ($0.needsSubstrate ? " · needs Substrate" : "") }.joined(separator: ", ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.muted)
                             ForEach(t.warnings, id: \.self) { w in Text("⚠️ \(w)").font(.caption).foregroundStyle(Color(hex: 0xffcf4a)) }
+                            if !t.extras.isEmpty {
+                                FlowLayout(spacing: 6) {
+                                    ForEach(t.extras, id: \.name) { f in
+                                        HStack(spacing: 6) {
+                                            Text("📄 \(f.name)").font(.system(size: 12.5, weight: .semibold))
+                                            Button { removeFile(t, f.name) } label: { Image(systemName: "xmark").font(.caption2.weight(.bold)) }
+                                        }
+                                        .foregroundStyle(Theme.text).padding(.horizontal, 10).padding(.vertical, 6).background(Theme.card2).clipShape(Capsule())
+                                    }
+                                }
+                                .padding(.top, 4)
+                                Text(t.toDocuments ? "Go inside the app with the tweak, and into its Documents folder when it first opens." : "Go inside the app next to the tweak.").font(.caption2).foregroundStyle(Theme.muted)
+                            }
                         }
                         .padding(.horizontal, 14).padding(.vertical, 10)
                     }
                 }
+                Hint(text: "Does a tweak read a settings file, like a .plist? Tap ••• on it and choose Add settings files. They go with the tweak every time it's used, including when it's an app's default.").padding(.top, 8)
             }
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.data], allowsMultipleSelection: false) { r in
-            guard case .success(let urls) = r, let u = urls.first else { return }
-            guard ["deb", "dylib"].contains(u.pathExtension.lowercased()) else { router.say("Pick a .deb or .dylib file"); return }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.data], allowsMultipleSelection: true) { r in
+            let target = filesFor
+            filesFor = nil
+            guard case .success(let urls) = r, !urls.isEmpty else { return }
+            if let t = target { addFiles(t, urls); return }
+            guard let u = urls.first, ["deb", "dylib"].contains(u.pathExtension.lowercased()) else { router.say("Pick a .deb or .dylib file"); return }
             upload(u)
         }
         .confirmationDialog("Delete \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
@@ -301,10 +324,48 @@ struct TweaksSheet: View {
             } catch { router.say(error.localizedDescription) }
         }
     }
+    func addFiles(_ t: STweak, _ urls: [URL]) {
+        Task {
+            var added = 0
+            for u in urls {
+                guard SettingsFile.allowed(u.lastPathComponent) else { router.say("\(u.lastPathComponent) isn't a settings file"); continue }
+                let dest = Paths.work.appendingPathComponent(String(UUID().uuidString.prefix(6)) + "-" + u.lastPathComponent)
+                do {
+                    try copyPicked(u, to: dest)
+                    defer { try? FileManager.default.removeItem(at: dest) }
+                    let uid = try await server.upload(dest)
+                    _ = try await server.post("/api/tweaks/\(t.id)/files", ["uploadId": uid, "fileName": u.lastPathComponent])
+                    added += 1
+                } catch { router.say("\(u.lastPathComponent): \(error.localizedDescription)") }
+            }
+            await server.refresh()
+            if added > 0 { router.say("Added \(added) file\(added == 1 ? "" : "s") to \(t.name)") }
+        }
+    }
+    func removeFile(_ t: STweak, _ name: String) {
+        Task {
+            let enc = name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? name
+            do { _ = try await server.data("DELETE", "/api/tweaks/\(t.id)/files/\(enc)"); await server.refresh(); router.say("Removed") } catch { router.say(error.localizedDescription) }
+        }
+    }
+    func setDocs(_ t: STweak) {
+        Task {
+            do { _ = try await server.post("/api/tweaks/\(t.id)", ["toDocuments": !t.toDocuments], method: "PATCH"); await server.refresh() } catch { router.say(error.localizedDescription) }
+        }
+    }
     func toggle(_ t: STweak) {
         Task {
             do { _ = try await server.post("/api/tweaks/\(t.id)", ["published": !t.published], method: "PATCH"); await server.refresh(); router.say(t.published ? "Hidden" : "Shown to everyone") } catch { router.say(error.localizedDescription) }
         }
+    }
+}
+
+/// Files a tweak reads its settings from (.plist, .json…): anything that isn't an app, a library or a certificate.
+enum SettingsFile {
+    static func isTweak(_ name: String) -> Bool { ["dylib", "deb"].contains((name as NSString).pathExtension.lowercased()) }
+    static func allowed(_ name: String) -> Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        return !ext.isEmpty && !["dylib", "deb", "ipa", "app", "appex", "framework", "p12", "mobileprovision", "zip"].contains(ext)
     }
 }
 

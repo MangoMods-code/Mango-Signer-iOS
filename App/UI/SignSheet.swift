@@ -52,6 +52,7 @@ struct SignSheet: View {
     @State private var icon: URL?
     @State private var iconItem: PhotosPickerItem?
     @State private var pickingDylib = false
+    @State private var filesToDocs = true
     @State private var savingPreset = false
     @State private var presetName = ""
     @State private var ready = false
@@ -76,7 +77,7 @@ struct SignSheet: View {
                     guard case .success(let urls) = r else { return }
                     for u in urls {
                         let ext = u.pathExtension.lowercased()
-                        guard ext == "dylib" || ext == "deb" else { router.say("\(u.lastPathComponent) isn't a .dylib or .deb"); continue }
+                        guard ext == "dylib" || ext == "deb" || SettingsFile.allowed(u.lastPathComponent) else { router.say("\(u.lastPathComponent) isn't a tweak or a settings file"); continue }
                         let dest = Paths.work.appendingPathComponent(String(UUID().uuidString.prefix(6)) + "-" + u.lastPathComponent)
                         if (try? copyPicked(u, to: dest)) != nil { dylibs.append(dest) }
                     }
@@ -240,20 +241,30 @@ struct SignSheet: View {
             .padding(.bottom, 10)
         }
         Button { pickingDylib = true } label: {
-            fileButton(icon: "plus", title: "Add your own .dylib or .deb", sub: place == .phone ? ".dylib only when signing on this iPhone" : "Jailbreak tweaks work too — Mango pulls the tweak out of the .deb", chosen: false)
+            fileButton(icon: "plus", title: "Add your own tweak files", sub: place == .phone ? ".dylib only when signing on this iPhone" : "A .dylib or .deb, plus any settings file it reads (.plist, .json…)", chosen: false)
         }
         .buttonStyle(.plain)
         if !dylibs.isEmpty {
             FlowLayout(spacing: 6) {
                 ForEach(Array(dylibs.enumerated()), id: \.offset) { i, u in
                     HStack(spacing: 6) {
-                        Text(u.lastPathComponent.split(separator: "-", maxSplits: 1).last.map(String.init) ?? u.lastPathComponent).font(.system(size: 13, weight: .semibold))
+                        Text((SettingsFile.isTweak(u.lastPathComponent) ? "🧩 " : "📄 ") + (u.lastPathComponent.split(separator: "-", maxSplits: 1).last.map(String.init) ?? u.lastPathComponent)).font(.system(size: 13, weight: .semibold))
                         Button { dylibs.remove(at: i) } label: { Image(systemName: "xmark").font(.caption2.weight(.bold)) }
                     }
                     .foregroundStyle(Theme.text).padding(.horizontal, 10).padding(.vertical, 6).background(Theme.card2).clipShape(Capsule())
                 }
             }
             .padding(.top, 8)
+            if dylibs.contains(where: { !SettingsFile.isTweak($0.lastPathComponent) }) {
+                if place == .phone {
+                    Hint(text: "Settings files are only added when signing on the server.").padding(.top, 6)
+                } else {
+                    ListBox(fill: Theme.bg2) {
+                        ToggleRow(title: "Copy settings files to Documents", sub: "They're always put inside the app next to the tweak. On = also copied into the app's Documents folder when it first opens", isOn: $filesToDocs)
+                    }
+                    .padding(.top, 8)
+                }
+            }
         }
         ListBox(fill: Theme.bg2) {
             ToggleRow(title: "Weak injection", sub: "App still opens if a tweak fails to load", isOn: $weak)
@@ -352,7 +363,7 @@ struct SignSheet: View {
     var formOptions: [String: Any] {
         [
             "minOS": minOS.trimmingCharacters(in: .whitespaces), "entitlements": entRows.map { $0.json }, "plist": plistRows.map { $0.json },
-            "weakDylibs": weak, "injectExtensions": injectExt, "removeExtensions": removeExtensions, "removeWatch": removeWatch,
+            "weakDylibs": weak, "injectExtensions": injectExt, "filesToDocuments": filesToDocs, "removeExtensions": removeExtensions, "removeWatch": removeWatch,
             "removeUISD": removeUISD, "enableDocs": enableDocs, "tweakIds": Array(tweakIds),
         ]
     }
@@ -526,13 +537,15 @@ struct SigningSheet: View {
             body["iconUploadId"] = iconId
         }
         var ds: [[String: Any]] = []
+        var extraFiles: [[String: Any]] = []
         for (i, d) in run.dylibs.enumerated() {
             let shown = d.lastPathComponent.split(separator: "-", maxSplits: 1).last.map(String.init) ?? d.lastPathComponent
-            title = "Uploading tweak \(i + 1) of \(run.dylibs.count)…"; sub = shown
+            title = "Uploading tweak file \(i + 1) of \(run.dylibs.count)…"; sub = shown
             let uploadId = try await server.upload(d)
-            ds.append(["uploadId": uploadId, "name": shown])
+            if SettingsFile.isTweak(shown) { ds.append(["uploadId": uploadId, "name": shown]) } else { extraFiles.append(["uploadId": uploadId, "name": shown]) }
         }
         body["dylibs"] = ds
+        body["tweakFiles"] = extraFiles
         title = "Signing…"; sub = "Big apps can take a minute"
         let r = try await server.post("/api/sign", body)
         guard let id = r["jobId"] as? String else { throw MangoError("The server didn't start signing. Try again.") }

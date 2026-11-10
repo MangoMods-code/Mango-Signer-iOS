@@ -569,8 +569,15 @@ struct STweakFile: Decodable { var name: String; var needsSubstrate: Bool
     init(from decoder: Decoder) throws { let c = try keyed(decoder); name = c.str("name") ?? ""; needsSubstrate = c.bool("needsSubstrate") ?? false }
 }
 
+struct STweakExtra: Decodable { var name: String; var size: Int64
+    init(from decoder: Decoder) throws { let c = try keyed(decoder); name = c.str("name") ?? ""; size = Int64(c.int("size") ?? 0) }
+}
+
 struct STweak: Decodable, Identifiable {
     var id: String
+    /// Settings files (like a .plist) that go with the tweak whenever it's used.
+    var extras: [STweakExtra] = []
+    var toDocuments = true
     var name: String
     var version: String?
     var description: String?
@@ -583,6 +590,7 @@ struct STweak: Decodable, Identifiable {
         author = c.str("author"); published = c.bool("published") ?? true
         id = c.str("id") ?? UUID().uuidString; name = c.str("name") ?? "Tweak"; version = c.str("version"); description = c.str("description")
         warnings = c.strings("warnings") ?? []; files = c.list("files") ?? []
+        extras = c.list("extras") ?? []; toDocuments = c.bool("toDocuments") ?? true
     }
 }
 
