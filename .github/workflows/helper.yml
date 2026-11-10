@@ -1,0 +1,29 @@
+name: Helper
+
+on:
+  push:
+    branches: [main]
+    paths: ['Helper/**', '.github/workflows/helper.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  helper:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build MangoFiles.dylib
+        run: |
+          xcrun -sdk iphoneos clang -arch arm64 -dynamiclib -fobjc-arc -Os -miphoneos-version-min=12.0 \
+            -framework Foundation -install_name @executable_path/MangoFiles.dylib \
+            Helper/MangoFiles.m -o MangoFiles.dylib
+          strip -x MangoFiles.dylib
+          file MangoFiles.dylib; ls -la MangoFiles.dylib; otool -L MangoFiles.dylib
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "helper-${{ github.run_number }}" MangoFiles.dylib --prerelease \
+            --title "MangoFiles helper ${{ github.run_number }}" --notes "Helper library used by the Mango Signer server. Not an app."

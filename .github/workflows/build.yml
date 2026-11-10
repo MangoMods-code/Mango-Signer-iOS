@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
+    paths-ignore: ['Helper/**', '.github/workflows/helper.yml']
   workflow_dispatch:
 
 permissions:
