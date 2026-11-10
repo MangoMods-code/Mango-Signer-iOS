@@ -211,7 +211,7 @@ struct TabPage<Content: View>: View {
         .refreshable { await server.refresh() }
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(alignment: .bottom) {
-                Text(title).font(.system(size: 32, weight: .bold)).tracking(-0.5).foregroundStyle(Theme.text)
+                Text(title).font(Theme.round(34, .heavy)).tracking(-0.7).foregroundStyle(Theme.text)
                 Spacer()
                 HStack(spacing: 10) {
                     if !(server.state?.alerts ?? []).isEmpty {
@@ -221,9 +221,14 @@ struct TabPage<Content: View>: View {
                 }
             }
             .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
-            .background(LinearGradient(colors: [Theme.bg, Theme.bg, Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+            // Frosted, fading out at the bottom, so the page's glow shows through and rows slide under it softly.
+            .background(
+                Rectangle().fill(.ultraThinMaterial)
+                    .mask(LinearGradient(colors: [.black, .black, .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+                    .ignoresSafeArea()
+            )
         }
-        .background(Theme.bg.ignoresSafeArea())
+        .background(ZStack(alignment: .top) { Theme.bg; Theme.glow.frame(height: 380) }.ignoresSafeArea())
     }
 }
 

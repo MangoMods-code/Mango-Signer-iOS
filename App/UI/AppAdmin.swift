@@ -30,16 +30,19 @@ struct FilePickButtonLabel: View {
     var chosen = false
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: chosen ? "checkmark.circle.fill" : icon).font(.title3).foregroundStyle(chosen ? Theme.leaf : Theme.mango).frame(width: 28)
+            Image(systemName: chosen ? "checkmark" : icon).font(.system(size: 17, weight: .bold)).foregroundStyle(chosen ? Theme.leaf : Theme.mango)
+                .frame(width: 42, height: 42).background((chosen ? Theme.leaf : Theme.mango).opacity(0.16)).clipShape(Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text)
-                Text(sub).font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(2)
+                Text(title).font(Theme.round(16, .semibold)).foregroundStyle(Theme.text)
+                Text(sub).font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
             }
             Spacer()
         }
         .padding(14)
-        .background(Theme.bg2).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(chosen ? Theme.leaf.opacity(0.5) : Theme.line, style: StrokeStyle(lineWidth: 1, dash: chosen ? [] : [5, 4])))
+        // A solid tinted card with the icon in a bubble (no dashed outline).
+        .background(LinearGradient(colors: [(chosen ? Theme.leaf : Theme.mango).opacity(0.13), (chosen ? Theme.leaf : Theme.mango).opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .edge(18, (chosen ? Theme.leaf : Theme.mango).opacity(chosen ? 0.45 : 0.28))
     }
 }
 

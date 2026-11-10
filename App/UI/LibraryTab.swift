@@ -55,10 +55,18 @@ enum Lib {
         groups(server).flatMap { $0.items }.first { $0.0 == key }?.1 ?? key
     }
 
+    /// A list worked out from the library once, then reused until the library changes.
+    static func derived(_ server: Server, _ key: String, _ make: () -> [SApp]) -> [SApp] {
+        if let hit = server.libCache[key] { return hit }
+        let result = make()
+        server.libCache[key] = result
+        return result
+    }
+
     static func filtered(_ server: Server, cat: String, query: String, sort: String) -> [SApp] {
         let cacheKey = "\(cat)|\(sort)|\(query)"
         if let hit = server.libCache[cacheKey] { return hit }
-        if server.libCache.count > 40 { server.libCache.removeAll() }
+        if server.libCache.count > 120 { server.libCache.removeAll() }
         let result = filteredFresh(server, cat: cat, query: query, sort: sort)
         server.libCache[cacheKey] = result
         return result
@@ -293,22 +301,22 @@ struct LibraryTab: View {
                      text: router.libQuery.isEmpty ? "Nothing here yet." : "No apps match “\(router.libQuery)”.",
                      button: server.isStaff ? nil : "Request an App") { router.open(.requestApp) }
         } else if cat == "all" && router.libQuery.isEmpty && router.libSort == "smart" {
-            let forTesters = server.seesTesterApps ? list.filter { $0.testersOnly } : []
+            let forTesters = server.seesTesterApps ? Lib.derived(server, "smart|testers") { list.filter { $0.testersOnly } } : []
             if !forTesters.isEmpty {
                 SectionTitle(text: "🧪 For testers", count: forTesters.count)
                 MiniShelf(apps: forTesters, sub: { $0.shownVersion })
             }
-            let updates = list.filter { $0.hasUpdate }
+            let updates = Lib.derived(server, "smart|updates") { list.filter { $0.hasUpdate } }
             if !updates.isEmpty {
                 SectionTitle(text: "⬆ Updates for you", count: updates.count)
                 MiniShelf(apps: updates, sub: { "→ \($0.shownVersion)" })
             }
-            let featured = list.filter { $0.featured == true }
+            let featured = Lib.derived(server, "smart|featured") { list.filter { $0.featured == true } }
             if !featured.isEmpty {
                 SectionTitle(text: "★ Featured")
                 MiniShelf(apps: featured, sub: { _ in "" })
             }
-            let recent = list.sorted { $0.sortDate > $1.sortDate }
+            let recent = Lib.derived(server, "smart|recent") { list.sorted { $0.sortDate > $1.sortDate } }
             SectionTitle(text: "🕒 Recently updated", count: list.count)
             AppsBlock(apps: Array(recent.prefix(router.libLimit)), age: true)
             if recent.count > router.libLimit {
@@ -332,8 +340,14 @@ struct WebEmpty: View {
     var action: () -> Void = {}
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 46, weight: .light)).foregroundStyle(Theme.mango)
-            Text(title).font(.title3.bold()).foregroundStyle(Theme.text)
+            // The icon sits in a soft glowing disc.
+            Image(systemName: icon).font(.system(size: 34, weight: .regular)).foregroundStyle(Theme.mango)
+                .frame(width: 84, height: 84)
+                .background(RadialGradient(colors: [Theme.mango.opacity(0.24), Theme.mango.opacity(0.06)], center: UnitPoint(x: 0.5, y: 0.35), startRadius: 0, endRadius: 46))
+                .clipShape(Circle()).overlay(Circle().strokeBorder(Theme.mango.opacity(0.28), lineWidth: 1))
+                .shadow(color: Theme.mango.opacity(0.14), radius: 20, y: 8)
+                .padding(.bottom, 6)
+            Text(title).font(Theme.round(20)).foregroundStyle(Theme.text)
             Text(text).font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
             if let button { WebButton(title: button, kind: .primary, action: action).frame(maxWidth: 240).padding(.top, 6) }
         }

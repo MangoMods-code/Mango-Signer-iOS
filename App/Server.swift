@@ -1191,13 +1191,28 @@ final class Server: ObservableObject {
 
     /// Counts refreshes, so an older one that finishes late can't put old data back on screen.
     private var refreshGen = 0
+    /// The server's fingerprint of the library we already have. Sent back so an unchanged library isn't downloaded again.
+    private var stateTag: String?
 
     @discardableResult
     func refresh() async -> String? {
         refreshGen += 1
         let gen = refreshGen
         do {
-            let d = try await data("GET", "/api/state")
+            var d: Data?
+            // Quick check first: "do I already have this?" The server answers with a tiny "yes" when nothing changed,
+            // so there's no download, no reading 6,000 apps and no redraw.
+            if let u = url("/api/state") {
+                var req = URLRequest(url: u, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
+                if let t = stateTag, state != nil { req.setValue(t, forHTTPHeaderField: "If-None-Match") }
+                if let (body, resp) = try? await session.data(for: req), let http = resp as? HTTPURLResponse {
+                    if http.statusCode == 304 { loadError = nil; return nil }
+                    if http.statusCode == 200 { d = body; stateTag = http.value(forHTTPHeaderField: "ETag") }
+                }
+            }
+            // Anything else (signed out, server down…) goes the normal way, which explains what's wrong.
+            if d == nil { d = try await data("GET", "/api/state"); stateTag = nil }
+            guard let d else { return loadError }
             do {
                 // Reading a big library takes a moment; do it off the main thread so the app never freezes.
                 let decoded = try await Task.detached(priority: .userInitiated) { try JSONDecoder().decode(ServerState.self, from: d) }.value

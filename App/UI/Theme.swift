@@ -24,6 +24,12 @@ enum Theme {
     static let blue = Color(hex: 0x6aa8ff)
     static let onAccent = Color(hex: 0x1a0d05)
     static let gradient = LinearGradient(colors: [mango, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// Buttons: lighter at the top, like the website's.
+    static let buttonFill = LinearGradient(colors: [Color(hex: 0xffb347), accent2], startPoint: .top, endPoint: .bottom)
+    /// The warm glow behind every page title.
+    static let glow = RadialGradient(colors: [mango.opacity(0.16), mango.opacity(0)], center: UnitPoint(x: 0.12, y: -0.05), startRadius: 0, endRadius: 360)
+    /// Rounded type for names, numbers and buttons.
+    static func round(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font { .system(size: size, weight: weight, design: .rounded) }
 
     static func applyAppearance() {
         let tab = UITabBarAppearance()
@@ -49,7 +55,15 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .edge(20)
+    }
+}
+
+/// A hairline edge, so panels sit on the page instead of blending into it.
+extension View {
+    func edge(_ radius: CGFloat, _ color: Color = Theme.line) -> some View {
+        overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(color, lineWidth: 1).allowsHitTesting(false))
     }
 }
 
@@ -58,14 +72,16 @@ struct SectionTitle: View {
     var count: Int?
     var body: some View {
         HStack(spacing: 8) {
-            Text(text.uppercased()).font(.caption.weight(.semibold)).tracking(0.8).foregroundStyle(Theme.muted)
+            // Reads like a heading, not a shouted label (old all-caps titles are shown in sentence case).
+            Text(text == text.uppercased() && text.count > 3 ? String(text.prefix(1)) + text.dropFirst().lowercased() : text)
+                .font(Theme.round(15)).foregroundStyle(Theme.soft)
             if let count {
-                Text("\(count)").font(.caption2.weight(.bold)).foregroundStyle(Theme.muted)
+                Text("\(count)").font(Theme.round(12)).foregroundStyle(Theme.muted)
                     .padding(.horizontal, 7).padding(.vertical, 2).background(Theme.card2).clipShape(Capsule())
             }
             Spacer()
         }
-        .padding(.horizontal, 4).padding(.top, 18).padding(.bottom, 8)
+        .padding(.horizontal, 4).padding(.top, 22).padding(.bottom, 10)
     }
 }
 
@@ -88,7 +104,7 @@ struct Badge: View {
             case .cloud: return (Color(hex: 0x5aa0ff), Color(hex: 0x5aa0ff).opacity(0.15))
             }
         }()
-        Text(text).font(.system(size: small ? 11 : 12, weight: style == .new ? .heavy : .semibold)).foregroundStyle(fg)
+        Text(text).font(Theme.round(small ? 11 : 12, style == .new ? .heavy : .bold)).foregroundStyle(fg)
             .padding(.horizontal, small ? 8 : 9).padding(.vertical, small ? 2 : 3)
             .background(style == .new ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(bg)).clipShape(Capsule())
             .lineLimit(1)
@@ -102,11 +118,12 @@ struct PillButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 14, weight: .bold))
+            Text(title).font(Theme.round(14))
                 .foregroundStyle(dim ? Theme.muted : danger ? Theme.red : Theme.mango)
-                .padding(.horizontal, 15).padding(.vertical, 6)
-                .background(dim ? AnyShapeStyle(Theme.card2) : AnyShapeStyle((danger ? Theme.red : Theme.mango).opacity(0.16)))
+                .padding(.horizontal, 17).padding(.vertical, 7)
+                .background(dim ? AnyShapeStyle(Theme.card2) : AnyShapeStyle((danger ? Theme.red : Theme.mango).opacity(0.15)))
                 .clipShape(Capsule())
+                .overlay(Capsule().strokeBorder(dim ? Theme.line : (danger ? Theme.red : Theme.mango).opacity(0.28), lineWidth: 1))
         }
         .buttonStyle(PressStyle())
     }
@@ -124,14 +141,16 @@ struct BigButton: View {
                 if let icon { Image(systemName: icon) }
                 Text(title)
             }
-            .font(.headline)
+            .font(Theme.round(17))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .foregroundStyle(primary ? Theme.onAccent : danger ? Theme.red : Theme.text)
-            .background(primary ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.card2))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(primary ? AnyShapeStyle(Theme.buttonFill) : AnyShapeStyle(Theme.card2))
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .edge(15, primary ? Color.white.opacity(0.18) : Theme.line)
+            .shadow(color: primary ? Theme.accent2.opacity(0.3) : .clear, radius: 10, y: 6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
     }
 }
 
@@ -234,7 +253,7 @@ extension Theme {
 struct SheetTitle: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.text)
+        Text(text).font(Theme.round(23, .heavy)).tracking(-0.3).foregroundStyle(Theme.text)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 8)
     }
 }
@@ -248,7 +267,7 @@ struct SheetHead<Icon: View>: View {
         HStack(spacing: 14) {
             icon
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.text).lineLimit(2)
+                Text(title).font(Theme.round(22, .heavy)).tracking(-0.3).foregroundStyle(Theme.text).lineLimit(2)
                 if !sub.isEmpty { Text(sub).font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1) }
             }
             Spacer(minLength: 0)
@@ -264,7 +283,8 @@ struct ListBox<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) { content }
             .background(fill)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .edge(20)
     }
 }
 
@@ -423,13 +443,14 @@ struct WebButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(big ? .system(size: 17, weight: .semibold) : .body.weight(.semibold))
+                .font(Theme.round(big ? 17 : 16, kind == .primary ? .bold : .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, big ? 16 : 12).padding(.horizontal, 16)
                 .foregroundStyle(kind == .primary ? Theme.onAccent : kind == .danger ? Theme.red : Theme.text)
-                .background(kind == .primary ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.card2))
-                .clipShape(RoundedRectangle(cornerRadius: big ? 15 : 13, style: .continuous))
-                .shadow(color: kind == .primary ? Color(hex: 0xff8c1a, alpha: 0.22) : .clear, radius: 9, y: 6)
+                .background(kind == .primary ? AnyShapeStyle(Theme.buttonFill) : kind == .danger ? AnyShapeStyle(Theme.red.opacity(0.1)) : AnyShapeStyle(Theme.card2))
+                .clipShape(RoundedRectangle(cornerRadius: big ? 16 : 14, style: .continuous))
+                .edge(big ? 16 : 14, kind == .primary ? Color.white.opacity(0.18) : kind == .danger ? Theme.red.opacity(0.22) : Theme.line)
+                .shadow(color: kind == .primary ? Theme.accent2.opacity(0.3) : .clear, radius: 10, y: 6)
         }
         .buttonStyle(PressStyle())
         .disabled(disabled)
@@ -439,9 +460,11 @@ struct WebButton: View {
 
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.75 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+        // Shrinks a touch and lights up under your finger, then springs back.
+        configuration.label
+            .brightness(configuration.isPressed ? 0.06 : 0)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.62), value: configuration.isPressed)
     }
 }
 
@@ -542,7 +565,8 @@ struct IconCircleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage).font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.mango)
-                .frame(width: 38, height: 38).background(Theme.card).clipShape(Circle())
+                .frame(width: 40, height: 40).background(Theme.card).clipShape(Circle())
+                .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1))
                 .overlay(alignment: .topTrailing) {
                     if dot > 0 {
                         Text(dot > 9 ? "9+" : "\(dot)").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
