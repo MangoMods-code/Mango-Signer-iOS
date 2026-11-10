@@ -264,6 +264,7 @@ struct SApp: Decodable, Identifiable {
     var signDefaults: SignDefaults?
     var remoteUrl: String?
     var testersOnly = false
+    var madeByMango = false
     // Your own imported apps (the Apps tab)
     var isImport = false
     var importId: String?
@@ -307,6 +308,7 @@ struct SApp: Decodable, Identifiable {
         signDefaults = c.obj("signDefaults")
         remoteUrl = c.str("remoteUrl")
         testersOnly = c.bool("testersOnly") ?? false
+        madeByMango = c.bool("madeByMango") ?? false
         isImport = c.bool("isImport") ?? false; importId = c.str("importId"); iconSrc = c.str("iconSrc")
         onGithub = c.bool("onGithub") ?? false; savingToGithub = c.bool("savingToGithub") ?? false; expires = c.str("expires")
         available = c.bool("available") ?? true; fileName = c.str("fileName"); lastSigned = c.str("lastSigned")

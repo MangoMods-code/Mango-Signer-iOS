@@ -12,6 +12,7 @@ enum Lib {
         case "updates": return a.hasUpdate
         case "new": return a.isNew || a.isUpdatedRecently
         case "featured": return a.featured == true
+        case "mango": return a.madeByMango
         case "none": return server.category(a.categoryId) == nil
         case "hidden": return a.published == false
         case "testers": return a.testersOnly
@@ -39,7 +40,7 @@ enum Lib {
         let tags = Array(Set(apps.flatMap { $0.tags ?? [] })).sorted()
         let srcs = Array(Set(apps.filter { $0.isSourceApp }.compactMap { $0.sourceName })).sorted()
         var g: [Group] = [
-            Group(title: "Show", items: [("all", "📱 All"), ("favorites", "♥ Favorites"), ("installed", "✓ Installed"), ("updates", "⬆ Updates"), ("new", "🆕 New"), ("featured", "★ Featured")] + (server.seesTesterApps ? [("testers", "🧪 Testers")] : [])),
+            Group(title: "Show", items: [("all", "📱 All"), ("favorites", "♥ Favorites"), ("installed", "✓ Installed"), ("updates", "⬆ Updates"), ("new", "🆕 New"), ("featured", "★ Featured")] + ((server.state?.apps ?? []).contains { $0.madeByMango } ? [("mango", "🥭 Made by Mango")] : []) + (server.seesTesterApps ? [("testers", "🧪 Testers")] : [])),
             Group(title: "Categories", items: (server.state?.categories ?? []).sorted { ($0.order ?? 0) < ($1.order ?? 0) }.map { ($0.id, "\($0.emoji ?? "") \($0.name)") }),
             Group(title: "Sources", items: srcs.map { n in ("src:\(n)", "\(apps.contains { $0.cloud == "telegram" && $0.sourceName == n } ? "✈️" : "☁") \(n)") }),
             Group(title: "Tags", items: tags.map { ("tag:\($0)", "# \($0)") }),
@@ -312,10 +313,9 @@ struct LibraryTab: View {
                 MiniShelf(apps: updates, sub: { "→ \($0.shownVersion)" })
             }
             let featured = Lib.derived(server, "smart|featured") { list.filter { $0.featured == true } }
-            if !featured.isEmpty {
-                SectionTitle(text: "★ Featured")
-                MiniShelf(apps: featured, sub: { _ in "" })
-            }
+            if !featured.isEmpty { FeatShelf(title: "★ Featured", apps: featured, cat: "featured") }
+            let mango = Lib.derived(server, "smart|mango") { list.filter { $0.madeByMango } }
+            if !mango.isEmpty { FeatShelf(title: "🥭 Made by Mango", apps: mango, cat: "mango", tint: true) }
             let recent = Lib.derived(server, "smart|recent") { list.sorted { $0.sortDate > $1.sortDate } }
             SectionTitle(text: "🕒 Recently updated", count: list.count)
             AppsBlock(apps: Array(recent.prefix(router.libLimit)), age: true)
@@ -355,7 +355,61 @@ struct WebEmpty: View {
     }
 }
 
-/// A slim row of icons (Updates for you, Featured).
+/// Compact cards for Featured and Made by Mango: icon, name, one line and a Get button right on the card.
+struct FeatShelf: View {
+    @EnvironmentObject var router: Router
+    @EnvironmentObject var server: Server
+    let title: String
+    let apps: [SApp]
+    let cat: String
+    var tint = false
+
+    func sub(_ a: SApp) -> String {
+        let first = (a.description ?? "").split(separator: "\n").first.map(String.init) ?? ""
+        return first.isEmpty ? (server.category(a.categoryId)?.name ?? a.shownVersion) : first
+    }
+
+    func card(_ a: SApp) -> some View {
+        HStack(spacing: 10) {
+            AppIconImage(app: a, size: 44)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(a.name).font(Theme.round(14.5)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(sub(a)).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+            }
+            Spacer(minLength: 2)
+            PillButton(title: a.getLabel) { router.quickGet(a, server: server) }
+        }
+        .padding(.leading, 8).padding(.trailing, 10).padding(.vertical, 8)
+        .background(tint ? LinearGradient(colors: [Theme.mango.opacity(0.16), Theme.mango.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing) : LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom))
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .edge(18, tint ? Theme.mango.opacity(0.3) : Theme.line)
+        .contentShape(Rectangle())
+        .onTapGesture { router.open(.app(a.id)) }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).font(Theme.round(15)).foregroundStyle(Theme.soft)
+            Spacer()
+            if apps.count > 2 {
+                Button("See all \(apps.count)") { router.libCat = cat }.font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.mango)
+            }
+        }
+        .padding(.horizontal, 4).padding(.top, 22).padding(.bottom, 10)
+        if apps.count == 1 {
+            card(apps[0])
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 10) {
+                    ForEach(apps) { a in card(a).frame(width: 264) }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+}
+
+/// A slim row of icons (Updates for you, For testers).
 struct MiniShelf: View {
     @EnvironmentObject var router: Router
     let apps: [SApp]

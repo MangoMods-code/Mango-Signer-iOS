@@ -221,6 +221,7 @@ struct AppSheet: View {
         var b = Lib.badges(a, server)
         b.append(Badge(text: server.categoryLabel(a.categoryId), style: .mango))
         if a.featured == true { b.append(Badge(text: "★ Featured", style: .warn)) }
+        if a.madeByMango { b.append(Badge(text: "🥭 Made by Mango", style: .warn)) }
         b.append(Badge(text: "v" + (a.shownVersion.isEmpty ? "?" : a.shownVersion)))
         let size = formatBytes(a.size)
         b.append(Badge(text: size.isEmpty ? "—" : size))
@@ -339,6 +340,8 @@ struct AppSheet: View {
             ToggleRow(title: "Show in App Library", sub: "Everyone you invite can sign and install it", isOn: Binding(get: { a.published != false }, set: { v in patch(a, ["published": v], v ? "Shown in App Library" : "Hidden from App Library") }))
             RowLine()
             ToggleRow(title: "Featured", sub: "Pinned to the top of the library", isOn: Binding(get: { a.featured == true }, set: { v in patch(a, ["featured": v], v ? "Featured ★" : "No longer featured") }))
+            RowLine()
+            ToggleRow(title: "Made by Mango", sub: "Shows in the 🥭 Made by Mango row at the top of everyone's library", isOn: Binding(get: { a.madeByMango }, set: { v in patch(a, ["madeByMango": v], v ? "Added to Made by Mango 🥭" : "Removed from Made by Mango") }))
             RowLine()
             ToggleRow(title: "Testers only", sub: "Only testers (and admins) can see it — a 🧪 For testers list shows at the top of their library",
                       isOn: Binding(get: { a.testersOnly }, set: { v in patch(a, ["testersOnly": v], v ? "Only testers can see it now 🧪" : "Not just for testers anymore") }))

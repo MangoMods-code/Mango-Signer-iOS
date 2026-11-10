@@ -131,6 +131,7 @@ struct EditAppSheet: View {
     @State private var published = true
     @State private var featured = false
     @State private var testersOnly = false
+    @State private var madeByMango = false
     @State private var iconItem: PhotosPickerItem?
     @State private var iconPNG: Data?
     @State private var resetIcon = false
@@ -187,6 +188,7 @@ struct EditAppSheet: View {
         published = a.published != false
         featured = a.featured == true
         testersOnly = a.testersOnly
+        madeByMango = a.madeByMango
         iconWhenSigning = a.useIconWhenSigning != false
         let d = a.signDefaults ?? SignDefaults()
         minOS = d.minOS
@@ -255,6 +257,8 @@ struct EditAppSheet: View {
             ToggleRow(title: "Show in App Library", sub: "Visible to everyone you invite", isOn: $published)
             RowLine()
             ToggleRow(title: "Featured", sub: "Pinned to the top of the library", isOn: $featured)
+            RowLine()
+            ToggleRow(title: "Made by Mango", sub: "Shows in the 🥭 Made by Mango row at the top of everyone's library", isOn: $madeByMango)
             RowLine()
             ToggleRow(title: "Testers only", sub: "Only testers (and admins) can see it", isOn: $testersOnly)
         }
@@ -353,7 +357,7 @@ struct EditAppSheet: View {
                 var body: [String: Any] = [
                     "name": name, "categoryId": categoryId.isEmpty ? NSNull() : categoryId, "developer": developer, "tags": tagList,
                     "versionOverride": version.trimmingCharacters(in: .whitespaces), "useVersionWhenSigning": versionWhenSigning,
-                    "description": about, "notes": notes, "published": published, "featured": featured, "testersOnly": testersOnly,
+                    "description": about, "notes": notes, "published": published, "featured": featured, "madeByMango": madeByMango, "testersOnly": testersOnly,
                     "useIconWhenSigning": iconWhenSigning,
                     "signDefaults": [
                         "minOS": minOS.trimmingCharacters(in: .whitespaces), "entitlements": entRows.map { $0.json }, "plist": plistRows.map { $0.json },
