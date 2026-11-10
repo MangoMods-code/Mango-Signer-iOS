@@ -9,6 +9,25 @@ struct CertsTab: View {
     @State private var renaming: SCert?
     @State private var newLabel = ""
     @State private var deleting: SCert?
+    @State private var openDetails: Set<String> = []
+
+    /// Days left as a ring: green, yellow under two weeks, red when expired or revoked.
+    func daysRing(_ c: SCert) -> some View {
+        let left = c.daysLeft
+        let dead = (left ?? 1) < 0 || c.check?.status == "revoked"
+        let color: Color = dead ? Theme.red : (left ?? 99) < 14 ? Theme.mango2 : Theme.leaf
+        let part: Double = left == nil ? 0 : dead ? 1 : max(0.04, min(1, Double(left!) / 365))
+        return ZStack {
+            Circle().stroke(Theme.card2, lineWidth: 6)
+            Circle().trim(from: 0, to: part).stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round)).rotationEffect(.degrees(-90))
+            VStack(spacing: 0) {
+                Text(left == nil ? "?" : "\(max(0, left!))").font(Theme.round(18, .heavy)).foregroundStyle(Theme.text).minimumScaleFactor(0.6).lineLimit(1)
+                Text(left == 1 ? "day" : "days").font(.system(size: 9.5)).foregroundStyle(Theme.muted)
+            }
+            .padding(8)
+        }
+        .frame(width: 66, height: 66)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -65,15 +84,38 @@ struct CertsTab: View {
 
     func card(_ c: SCert) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text(c.label).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.text)
-                if c.isDefault == true { Badge(text: "Default", style: .mango) }
-                Spacer()
+            // Days left at a glance; the fine print is tucked under Details.
+            HStack(spacing: 14) {
+                daysRing(c)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(c.label).font(Theme.round(18)).foregroundStyle(Theme.text).lineLimit(2)
+                        if c.isDefault == true { Badge(text: "Default", style: .mango) }
+                    }
+                    BadgeFlow(badges: badges(c)).padding(.top, 3)
+                }
+                Spacer(minLength: 0)
             }
-            BadgeFlow(badges: badges(c)).padding(.vertical, 10)
-            KVList(items: kv(c))
-            SectionTitle(text: "Profile allows").padding(.top, -8)
-            BadgeFlow(badges: SignPresets.ent.map { p in Badge(text: "\(c.allows(p.key) ? "✓" : "✕") \(p.short)", style: c.allows(p.key) ? .good : .plain) })
+            Rectangle().fill(Theme.line).frame(height: 1).padding(.top, 12)
+            Button {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                    if openDetails.contains(c.id) { openDetails.remove(c.id) } else { openDetails.insert(c.id) }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Details").font(Theme.round(14, .semibold)).foregroundStyle(Theme.mango)
+                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Theme.mango)
+                        .rotationEffect(.degrees(openDetails.contains(c.id) ? 90 : 0))
+                    Spacer()
+                }
+                .padding(.vertical, 11).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if openDetails.contains(c.id) {
+                KVList(items: kv(c))
+                Text("Profile allows").font(.caption).foregroundStyle(Theme.muted).padding(.top, 8).padding(.bottom, 6)
+                BadgeFlow(badges: SignPresets.ent.map { p in Badge(text: "\(c.allows(p.key) ? "✓" : "✕") \(p.short)", style: c.allows(p.key) ? .good : .plain) })
+            }
             if c.matches == false { WarningBox(text: "This .p12 isn't listed in the provisioning profile, so signed apps won't install. Use the profile made for this certificate.", bad: true).padding(.top, 8) }
             if c.type == "App Store" { WarningBox(text: "App Store profiles can't install apps directly. Use a Development, Ad Hoc or Enterprise profile.").padding(.top, 8) }
             if c.deviceIncluded == false {
@@ -90,7 +132,8 @@ struct CertsTab: View {
             .padding(.top, 14)
         }
         .padding(16)
-        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .edge(20)
         .padding(.bottom, 12)
     }
 

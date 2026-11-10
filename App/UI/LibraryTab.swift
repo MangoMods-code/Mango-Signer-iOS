@@ -94,7 +94,7 @@ enum Lib {
         return apps
     }
 
-    static func badges(_ a: SApp, _ server: Server, compact: Bool = false) -> [Badge] {
+    static func badges(_ a: SApp, _ server: Server, compact: Bool = false, noCloud: Bool = false) -> [Badge] {
         var b: [Badge] = []
         if a.hasUpdate { b.append(Badge(text: "⬆ Update", style: .mango, small: true)) }
         else if a.isStopped { b.append(Badge(text: "⚠ Won't open", style: .bad, small: true)) }
@@ -104,7 +104,7 @@ enum Lib {
             if a.testersOnly && server.seesTesterApps { b.append(Badge(text: "🧪 Testers", style: .blue, small: true)) }
             if server.isStaff && a.published == false && !a.testersOnly { b.append(Badge(text: "Hidden", small: true)) }
             if a.missing == true { b.append(Badge(text: "Removed from source", style: .bad, small: true)) }
-            if let c = cloudBadge(a, server) { b.append(Badge(text: c, style: .cloud, small: true)) }
+            if !noCloud, let c = cloudBadge(a, server) { b.append(Badge(text: c, style: .cloud, small: true)) }
         }
         return b
     }
@@ -413,19 +413,21 @@ struct AppRowView: View {
         let a = app
         let rating = a.votes > 0 ? "👍 \(Int((Double(a.likes ?? 0) * 100 / Double(a.votes)).rounded()))%" : ""
         let when = age ? "\(a.updatedAt != nil && a.updatedAt != a.addedAt ? "Updated" : "Added") \(ago(a.updatedAt ?? a.addedAt))" : ""
-        let sub2 = [when, formatBytes(a.size), a.developer ?? "", (a.installCount ?? 0) > 0 ? "🔥 \(a.installCount!)" : "", rating].filter { !$0.isEmpty }.joined(separator: " · ")
+        let from = a.isSourceApp ? (a.sourceName.map { "\(a.cloud == "telegram" ? "✈️" : "☁") \($0)" } ?? "") : ""
+        // One quiet line of facts: version, size, age, where it's from, how popular.
+        let facts = [a.shownVersion, formatBytes(a.size), when, from, (a.installCount ?? 0) > 0 ? "🔥 \(a.installCount!)" : "", rating].filter { !$0.isEmpty }.joined(separator: " · ")
         let desc = (a.description ?? "").split(separator: "\n").first.map(String.init) ?? ""
-        let badges = Lib.badges(a, server)
+        let what = desc.isEmpty ? (a.developer?.isEmpty == false ? a.developer! : (a.bundleId ?? "")) : desc
+        let badges = Lib.badges(a, server, noCloud: true)
         HStack(spacing: 12) {
             AppIconImage(app: a)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(a.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(a.name).font(Theme.round(16.5, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                     if a.featured == true { Text("★").font(.caption).foregroundStyle(Theme.mango2) }
                 }
-                Text("\(a.shownVersion.isEmpty ? "—" : a.shownVersion) · \(desc.isEmpty ? (a.bundleId ?? "") : desc)")
-                    .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
-                if !sub2.isEmpty { Text(sub2).font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1) }
+                if !what.isEmpty { Text(what).font(.system(size: 13)).foregroundStyle(Theme.soft.opacity(0.82)).lineLimit(1) }
+                if !facts.isEmpty { Text(facts).font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.muted).lineLimit(1).padding(.top, 1) }
                 if !badges.isEmpty {
                     // One line of badges (cheaper to lay out than a wrapping row while scrolling).
                     HStack(spacing: 5) { ForEach(Array(badges.prefix(4).enumerated()), id: \.offset) { $0.element } }

@@ -38,6 +38,7 @@ struct SignedTab: View {
                 WebEmpty(icon: "arrow.down.circle", title: "Nothing signed yet", text: "Signed apps show up here, ready to install.",
                          button: "Go to \(server.isStaff ? "Library" : "App Library")") { router.tab = .library }
             } else {
+                summaryCard
                 phoneCard
                 if !signed.isEmpty {
                     Button { router.open(.resignAll) } label: {
@@ -74,6 +75,31 @@ struct SignedTab: View {
             await server.refresh()
             await server.syncWithDevice(force: true)
         }
+    }
+
+    /// Ready to install, on this iPhone, and how long until the first one stops opening.
+    var summaryCard: some View {
+        let ready = signed.filter { $0.fileAvailable == true || local.copy(of: $0.id) != nil }.count
+        let here = signed.filter { PhoneStatus.of(bundleId: $0.bundleId, name: $0.name).installed == true }.count
+        let lefts: [Int] = signed.compactMap { s in parseDate(s.expires).map { Calendar.current.dateComponents([.day], from: Date(), to: $0).day ?? 0 } }
+        let soonest = lefts.min()
+        return HStack(spacing: 0) {
+            sumCell("\(ready)", "ready to install", Theme.text)
+            Rectangle().fill(Theme.line).frame(width: 1, height: 38)
+            sumCell("\(here)", "on this iPhone", Theme.text)
+            Rectangle().fill(Theme.line).frame(width: 1, height: 38)
+            sumCell(soonest.map { $0 < 0 ? "Expired" : "\($0)d" } ?? "—", (soonest ?? 0) < 0 ? "certificate" : "until one expires", (soonest ?? 99) < 7 ? Theme.red : Theme.text)
+        }
+        .padding(.vertical, 14)
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).edge(20)
+        .padding(.bottom, 12)
+    }
+    func sumCell(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(Theme.round(24, .heavy)).foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.6)
+            Text(label).font(.system(size: 11.5)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity).padding(.horizontal, 6)
     }
 
     /// "What's on this iPhone" summary, like ESign's app list.

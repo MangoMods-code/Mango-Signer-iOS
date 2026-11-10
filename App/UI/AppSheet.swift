@@ -12,6 +12,17 @@ struct AppSheet: View {
 
     var app: SApp? { server.app(appId) }
 
+    /// One fact in the strip under the app's name.
+    func fact(_ label: String, _ value: String, _ note: String?) -> some View {
+        VStack(spacing: 3) {
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.muted)
+            Text(value).font(Theme.round(18, .heavy)).foregroundStyle(Theme.soft).lineLimit(1)
+            if let note { Text(note).font(.system(size: 10.5)).foregroundStyle(Theme.muted) }
+        }
+        .frame(minWidth: 62).padding(.horizontal, 14)
+    }
+    var factLine: some View { Rectangle().fill(Theme.line).frame(width: 1, height: 36) }
+
     @State private var original: String?
     @State private var favNow: Bool?
     @State private var voteNow: Int?
@@ -53,31 +64,63 @@ struct AppSheet: View {
         let versions = a.versions ?? []
         let shots = server.screenshotURLs(a)
         SheetScroll {
-            SheetHead(title: a.name, sub: a.developer?.isEmpty == false ? a.developer! : (a.bundleId ?? "")) { AppIconImage(app: a, size: 76) }
-            BadgeFlow(badges: headBadges(a)).padding(.bottom, 10)
-
-            HStack(spacing: 0) {
-                stat("\(a.installCount ?? 0)", "installs")
-                Rectangle().fill(Theme.line).frame(width: 1, height: 34)
-                stat(pct.map { "\($0)%" } ?? "—", a.votes > 0 ? "liked · \(a.votes) vote\(a.votes == 1 ? "" : "s")" : "no votes yet")
-                Rectangle().fill(Theme.line).frame(width: 1, height: 34)
-                stat(a.minOS?.isEmpty == false ? a.minOS! : "—", "min iOS")
+            HStack(alignment: .center, spacing: 16) {
+                AppIconImage(app: a, size: 104).shadow(color: .black.opacity(0.35), radius: 14, y: 8)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(a.name).font(Theme.round(23, .heavy)).tracking(-0.3).foregroundStyle(Theme.text).lineLimit(2).minimumScaleFactor(0.8)
+                    Text(a.developer?.isEmpty == false ? a.developer! : (a.bundleId ?? "")).font(.subheadline).foregroundStyle(Theme.muted).lineLimit(1)
+                    HStack(spacing: 8) {
+                        Button { router.quickGet(a, server: server) } label: {
+                            Text(a.hasUpdate ? "Update" : a.isStopped ? "Fix" : a.installed != nil ? "Get Again" : "Get")
+                                .font(Theme.round(15)).foregroundStyle(Theme.onAccent)
+                                .padding(.horizontal, 26).padding(.vertical, 8).frame(minWidth: 96)
+                                .background(Theme.buttonFill).clipShape(Capsule())
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                                .shadow(color: Theme.accent2.opacity(0.3), radius: 10, y: 6)
+                        }
+                        .buttonStyle(PressStyle())
+                        Button { router.open(.sign(a.id, presetId: nil)) } label: {
+                            Text("Options").font(Theme.round(15, .semibold)).foregroundStyle(Theme.text)
+                                .padding(.horizontal, 16).padding(.vertical, 8)
+                                .background(Theme.card2).clipShape(Capsule()).overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1))
+                        }
+                        .buttonStyle(PressStyle())
+                    }
+                    .padding(.top, 9)
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.vertical, 10).background(Theme.bg2).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .padding(.top, 4).padding(.bottom, 14)
+            .padding(.bottom, 14)
+            if !headBadges(a).isEmpty { BadgeFlow(badges: headBadges(a)).padding(.bottom, 10) }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    fact("Installs", "\(a.installCount ?? 0)", nil)
+                    factLine
+                    fact("Liked", pct.map { "\($0)%" } ?? "—", a.votes > 0 ? "\(a.votes) vote\(a.votes == 1 ? "" : "s")" : "no votes")
+                    factLine
+                    fact("Version", a.shownVersion.isEmpty ? "—" : a.shownVersion, nil)
+                    factLine
+                    fact("Size", formatBytes(a.size).isEmpty ? "—" : formatBytes(a.size), nil)
+                    factLine
+                    fact("Needs iOS", a.minOS?.isEmpty == false ? a.minOS! : "—", nil)
+                }
+                .padding(.vertical, 12)
+            }
+            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .padding(.bottom, 12)
 
             if a.missing == true {
                 WarningBox(text: owner ? "This app was removed from \(a.sourceName ?? "its source"), so it's hidden from everyone. You can still try signing it if the link works, or delete it." : "This app is no longer available.", bad: true)
             }
 
-            WebButton(title: a.hasUpdate ? "Update to \(a.shownVersion)" : a.isStopped ? "Sign Again to Fix" : a.installed != nil ? "Get Again" : "Get",
-                      kind: .primary, big: true) { router.quickGet(a, server: server) }
-
+            if a.hasUpdate { Hint(text: "Updates you to \(a.shownVersion).", center: true) }
+            else if a.isStopped { Hint(text: "Signs it again so it opens.", center: true) }
             if let inst = a.installed { installedNote(a, inst) }
             if !defaults.isEmpty { Hint(text: "Comes set up with: \(defaults.joined(separator: " · "))", center: true).padding(.top, 8) }
-            LinkButton(title: "Sign with options…") { router.open(.sign(a.id, presetId: nil)) }
             if server.seesTesterApps && !server.isOwner {
-                LinkButton(title: "🐞 Report a bug in this app") { router.open(.reportBug(a.id)) }.padding(.top, -10)
+                LinkButton(title: "🐞 Report a bug in this app") { router.open(.reportBug(a.id)) }
             }
 
             if !shots.isEmpty {

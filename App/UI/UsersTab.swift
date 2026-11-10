@@ -95,8 +95,7 @@ struct UsersTab: View {
                     ForEach(Array(users.enumerated()), id: \.element.id) { i, u in
                         if i > 0 { RowLine() }
                         HStack(spacing: 12) {
-                            Text(String(u.username.prefix(1)).uppercased()).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.mango)
-                                .frame(width: 44, height: 44).background(LinearGradient(colors: [Theme.card2, Theme.icon], startPoint: .topLeading, endPoint: .bottomTrailing)).clipShape(Circle())
+                            Avatar(name: u.username)
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
                                     Text(u.username).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text)

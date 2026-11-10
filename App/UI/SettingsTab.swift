@@ -15,6 +15,7 @@ struct SettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            profileCard
             if server.isStaff {
                 // The tab bar only fits five tabs, so your certificates live here.
                 let warn = server.certs.contains { $0.check?.status == "revoked" || ($0.daysLeft ?? 99) < 7 }
@@ -57,6 +58,27 @@ struct SettingsTab: View {
     }
 
     // MARK: owner
+
+    /// Your name, role and iPhone, with how many certificates and signed apps you have.
+    var profileCard: some View {
+        let name = server.account?.username ?? "You"
+        let role = server.isOwner ? "👑 Owner" : server.isAdmin ? "⭐ Admin" : server.account?.rank == "tester" ? "🧪 Tester" : "Member"
+        let phone = server.account?.udid != nil ? (server.account?.deviceName ?? "iPhone linked") : "No iPhone linked"
+        return HStack(spacing: 14) {
+            Avatar(name: name, size: 58)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(Theme.round(19)).foregroundStyle(Theme.text).lineLimit(1)
+                Text("\(role) · \(phone)").font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            VStack(spacing: 0) { Text("\(server.certs.count)").font(Theme.round(19, .heavy)).foregroundStyle(Theme.text); Text("certs").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+            VStack(spacing: 0) { Text("\(server.state?.signed?.count ?? 0)").font(Theme.round(19, .heavy)).foregroundStyle(Theme.text); Text("signed").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(LinearGradient(colors: [Theme.mango.opacity(0.12), Theme.mango.opacity(0)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).edge(20)
+        .padding(.bottom, 12)
+    }
 
     @ViewBuilder
     var ownerSections: some View {

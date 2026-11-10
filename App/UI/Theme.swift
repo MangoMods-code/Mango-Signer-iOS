@@ -303,8 +303,16 @@ struct LinkRow: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Text(title).font(.body.weight(.semibold)).foregroundStyle(color)
+            HStack(spacing: 12) {
+                // A row that starts with an emoji (or a plus) shows it in a small tile, like the Settings app.
+                let parts = LinkRow.split(title)
+                if let icon = parts.icon {
+                    Text(icon).font(.system(size: 16))
+                        .frame(width: 32, height: 32).background(Theme.card2)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+                }
+                Text(parts.text).font(Theme.round(16.5, .semibold)).foregroundStyle(color).multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
                 if !value.isEmpty { Text(value).font(.subheadline).foregroundStyle(valueColor).lineLimit(1) }
                 if chevron { Text("›").foregroundStyle(Theme.muted) }
@@ -313,6 +321,16 @@ struct LinkRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// "🧩 Tweaks" -> ("🧩", "Tweaks"). Titles without an emoji keep no tile.
+    static func split(_ title: String) -> (icon: String?, text: String) {
+        guard let first = title.first else { return (nil, title) }
+        let isEmoji = first.unicodeScalars.contains { $0.properties.isEmojiPresentation || ($0.properties.isEmoji && $0.value > 0x238C) }
+        let isPlus = first == "＋" || first == "+" || first == "↻"
+        guard isEmoji || isPlus else { return (nil, title) }
+        let rest = title.dropFirst().trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? (nil, title) : (String(first), rest)
     }
 }
 
@@ -635,3 +653,16 @@ func shortDate(_ s: String?) -> String {
 }
 
 func shortUdid(_ s: String) -> String { s.count > 16 ? "\(s.prefix(8))…\(s.suffix(6))" : s }
+
+/// A round initial in a color that's always the same for the same name.
+struct Avatar: View {
+    let name: String
+    var size: CGFloat = 44
+    var body: some View {
+        let h = Double(name.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 360 }) / 360
+        Text(String(name.prefix(1)).uppercased()).font(Theme.round(size * 0.41, .heavy)).foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(LinearGradient(colors: [Color(hue: h, saturation: 0.6, brightness: 0.92), Color(hue: (h + 0.11).truncatingRemainder(dividingBy: 1), saturation: 0.72, brightness: 0.72)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .clipShape(Circle())
+    }
+}

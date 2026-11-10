@@ -17,14 +17,11 @@ struct AppsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { picking = true } label: {
-                FilePickButtonLabel(icon: "plus", title: "Import an .ipa", sub: "From Files, iCloud Drive or Downloads. Only you can see apps you import.")
+            HStack(alignment: .top, spacing: 10) {
+                importTile(icon: "plus", title: "Import a file", sub: "An .ipa from Files, iCloud Drive or Downloads", color: Theme.mango) { picking = true }
+                importTile(icon: "link", title: "Import from a link", sub: "Paste a direct .ipa download link", color: Theme.blue) { router.open(.importLink) }
             }
-            .buttonStyle(.plain)
-            Button { router.open(.importLink) } label: {
-                FilePickButtonLabel(icon: "link", title: "Import from a link", sub: "Paste a direct .ipa link and it downloads to this iPhone.")
-            }
-            .buttonStyle(.plain).padding(.top, 10)
+            .fixedSize(horizontal: false, vertical: true)
             if importing > 0 {
                 HStack(spacing: 10) {
                     ProgressView().tint(Theme.mango)
@@ -89,6 +86,25 @@ struct AppsTab: View {
         .confirmationDialog("Delete \(deleting?.name ?? "app")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let d = deleting { deleteAccountApp(d) } }
         } message: { Text("It's removed from your account. Your signed copy stays in the Signed tab.") }
+    }
+
+    /// One of the two big "ways in" tiles at the top.
+    func importTile(icon: String, title: String, sub: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                Image(systemName: icon).font(.system(size: 17, weight: .bold)).foregroundStyle(color)
+                    .frame(width: 40, height: 40).background(color.opacity(0.16)).clipShape(Circle()).padding(.bottom, 8)
+                Text(title).font(Theme.round(16)).foregroundStyle(Theme.text)
+                Text(sub).font(.system(size: 12.5)).foregroundStyle(Theme.muted).multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(14)
+            .background(LinearGradient(colors: [color.opacity(0.14), color.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .background(Theme.card).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .edge(20, color.opacity(0.27))
+        }
+        .buttonStyle(PressStyle())
     }
 
     func localRow(_ app: LibraryApp) -> some View {
