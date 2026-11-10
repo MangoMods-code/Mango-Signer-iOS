@@ -158,6 +158,8 @@ final class Router: ObservableObject {
     @Published var locked = false
     /// Signed apps just made, so their sheets work before the next refresh.
     var signedCache: [String: SSigned] = [:]
+    /// Signed apps whose install pop-up was already brought up automatically (so it only happens once each).
+    var autoInstalled = Set<String>()
 
     // Library filters (kept between launches, like the website).
     @Published var libCat = UserDefaults.standard.string(forKey: "lib.cat") ?? "all" { didSet { UserDefaults.standard.set(libCat, forKey: "lib.cat") } }

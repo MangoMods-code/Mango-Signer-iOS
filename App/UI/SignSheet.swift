@@ -620,6 +620,14 @@ struct ReadySheet: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        // They watched it sign, so bring up the install pop-up for them. The Install button stays as the fallback.
+        .task {
+            guard server.https, !router.autoInstalled.contains(signedId) else { return }
+            router.autoInstalled.insert(signedId)
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled, UIApplication.shared.applicationState == .active, let s = router.signed(signedId, server) else { return }
+            router.startInstall(s, server: server)
+        }
     }
 }
 
