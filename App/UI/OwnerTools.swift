@@ -297,7 +297,7 @@ struct TweaksSheet: View {
                 Hint(text: "Does a tweak read a settings file, like a .plist? Tap ••• on it and choose Add settings files. They go with the tweak every time it's used, including when it's an app's default.").padding(.top, 8)
             }
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.data], allowsMultipleSelection: true) { r in
+        .copyImporter(isPresented: $picking, allowedContentTypes: [.data], allowsMultipleSelection: true) { r in
             let target = filesFor
             filesFor = nil
             guard case .success(let urls) = r, !urls.isEmpty else { return }
@@ -615,7 +615,7 @@ struct AddAppSheet: View {
                 }
             }
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: false) { r in
+        .copyImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: false) { r in
             guard case .success(let urls) = r, let u = urls.first else { return }
             upload(u)
         }
@@ -739,7 +739,7 @@ struct BackupSheet: View {
             }
             Hint(text: "Restoring replaces everything on this server with what's in the backup, then the server restarts.").padding(.top, 8)
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.zip], allowsMultipleSelection: false) { r in
+        .copyImporter(isPresented: $picking, allowedContentTypes: [.zip], allowsMultipleSelection: false) { r in
             if case .success(let urls) = r, let u = urls.first { confirmRestore = u }
         }
         .confirmationDialog("Restore this backup?", isPresented: Binding(get: { confirmRestore != nil }, set: { if !$0 { confirmRestore = nil } }), titleVisibility: .visible) {

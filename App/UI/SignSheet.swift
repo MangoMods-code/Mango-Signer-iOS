@@ -73,7 +73,7 @@ struct SignSheet: View {
             SheetScroll { form(a) }
                 .onAppear { if !ready { load(a); ready = true } }
                 .onChange(of: iconItem) { item in loadIcon(item) }
-                .fileImporter(isPresented: $pickingDylib, allowedContentTypes: [.data], allowsMultipleSelection: true) { r in
+                .copyImporter(isPresented: $pickingDylib, allowedContentTypes: [.data], allowsMultipleSelection: true) { r in
                     guard case .success(let urls) = r else { return }
                     for u in urls {
                         let ext = u.pathExtension.lowercased()

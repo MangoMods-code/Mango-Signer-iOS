@@ -72,7 +72,7 @@ struct LocalAppsScreen: View {
             ToolbarItem(placement: .navigationBarTrailing) { Button { picking = true } label: { Image(systemName: "plus") } }
         }
         .toast($toast)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: true) { result in
+        .copyImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             importing += urls.count
             Task {
@@ -171,7 +171,7 @@ struct LocalSignSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(phase == .signing) } }
             .interactiveDismissDisabled(phase == .signing)
-            .fileImporter(isPresented: $pickingDylib, allowedContentTypes: [FileTypes.dylib, .data], allowsMultipleSelection: true) { result in
+            .copyImporter(isPresented: $pickingDylib, allowedContentTypes: [FileTypes.dylib, .data], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
                     let dest = Paths.work.appendingPathComponent(String(UUID().uuidString.prefix(6)) + "-" + url.lastPathComponent)
@@ -296,7 +296,7 @@ struct AddCertSheet: View {
             .navigationTitle("Add Certificate")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy) } }
-            .fileImporter(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
+            .copyImporter(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }),
                           allowedContentTypes: picking == .p12 ? [FileTypes.p12, .data] : [FileTypes.provision, .data]) { result in
                 guard case .success(let url) = result else { return }
                 // Copy right away: the picked file's access ends when this returns.

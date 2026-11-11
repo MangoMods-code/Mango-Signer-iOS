@@ -66,7 +66,7 @@ struct AppsTab: View {
             }
         }
         .onChange(of: router.importTick) { _ in picking = true }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: true) { result in
+        .copyImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result, !urls.isEmpty else { return }
             importing += urls.count
             Task {

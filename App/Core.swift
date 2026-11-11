@@ -305,3 +305,63 @@ enum Signer {
         return log
     }
 }
+
+// MARK: - Picking files by copy
+
+/// A file picker that hands the app its own copy of what you pick (like ESign), instead of reaching into Files.
+/// Reaching into Files needs the app to be signed with its own app ID, which isn't the case with most certificates,
+/// so the copy way is the one that always works.
+struct CopyPicker: UIViewControllerRepresentable {
+    let types: [UTType]
+    let multiple: Bool
+    let done: (Result<[URL], Error>) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let p = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        p.allowsMultipleSelection = multiple
+        p.delegate = context.coordinator
+        return p
+    }
+    func updateUIViewController(_ vc: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: CopyPicker
+        init(_ p: CopyPicker) { parent = p }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.done(.success(urls))
+            parent.dismiss()
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.done(.failure(CocoaError(.userCancelled)))
+            parent.dismiss()
+        }
+    }
+
+    /// Copies left over from earlier picks. Called when the app opens.
+    static func clearOldCopies() {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory
+        for u in (try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? [] where u.lastPathComponent.hasSuffix("-Inbox") {
+            for f in (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: nil)) ?? [] { try? fm.removeItem(at: f) }
+        }
+    }
+}
+
+extension View {
+    /// Same shape as `.fileImporter`, but the app gets a copy of each file.
+    func copyImporter(isPresented: Binding<Bool>, allowedContentTypes: [UTType], allowsMultipleSelection: Bool, onCompletion: @escaping (Result<[URL], Error>) -> Void) -> some View {
+        sheet(isPresented: isPresented) {
+            CopyPicker(types: allowedContentTypes, multiple: allowsMultipleSelection, done: onCompletion).ignoresSafeArea()
+        }
+    }
+    func copyImporter(isPresented: Binding<Bool>, allowedContentTypes: [UTType], onCompletion: @escaping (Result<URL, Error>) -> Void) -> some View {
+        copyImporter(isPresented: isPresented, allowedContentTypes: allowedContentTypes, allowsMultipleSelection: false) { r in
+            switch r {
+            case .success(let urls): if let u = urls.first { onCompletion(.success(u)) } else { onCompletion(.failure(CocoaError(.userCancelled))) }
+            case .failure(let e): onCompletion(.failure(e))
+            }
+        }
+    }
+}

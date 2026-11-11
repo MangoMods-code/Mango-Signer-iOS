@@ -196,7 +196,7 @@ struct AddServerCertSheet: View {
             if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.top, 8) }
             Hint(text: "Your certificate is private to your account. Its password is stored encrypted and only used for signing.").padding(.top, 10)
         }
-        .fileImporter(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }), allowedContentTypes: [.data, .zip]) { r in
+        .copyImporter(isPresented: Binding(get: { picking != nil }, set: { if !$0 { picking = nil } }), allowedContentTypes: [.data, .zip]) { r in
             let kind = picking
             picking = nil
             guard case .success(let u) = r else { return }

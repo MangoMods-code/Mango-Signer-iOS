@@ -8,7 +8,7 @@ struct MangoSignerApp: App {
     @StateObject private var local = LocalStore()
     @StateObject private var router = Router()
 
-    init() { Theme.applyAppearance() }
+    init() { Theme.applyAppearance(); CopyPicker.clearOldCopies() }
 
     var body: some Scene {
         WindowGroup {

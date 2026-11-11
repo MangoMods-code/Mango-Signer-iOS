@@ -587,7 +587,7 @@ struct AppFileSheet: View {
             .onAppear {
                 if !loaded { loaded = true; linkOnly = newVersion ? true : (a.cloud == "link" || a.cloud == nil) }
             }
-            .fileImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa, .data]) { r in
+            .copyImporter(isPresented: $picking, allowedContentTypes: [FileTypes.ipa, .data]) { r in
                 guard case .success(let u) = r else { return }
                 guard u.pathExtension.lowercased() == "ipa" else { router.say("Pick an .ipa file"); return }
                 fromFile(a, u)
